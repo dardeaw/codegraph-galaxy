@@ -25,6 +25,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'npm'
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -32,19 +33,19 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci || npm install
 
       - name: Package on Windows
         if: runner.os == 'Windows'
-        run: npx electron-builder --win
+        run: npm run dist:win
 
       - name: Package on macOS
         if: runner.os == 'macOS'
-        run: npx electron-builder --mac
+        run: npm run dist:mac
 
       - name: Package on Linux
         if: runner.os == 'Linux'
-        run: npx electron-builder --linux AppImage deb
+        run: npm run dist:linux
 
       - name: Upload Release Binaries
         uses: softprops/action-gh-release@v2

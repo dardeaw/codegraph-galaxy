@@ -8,8 +8,9 @@
 [English](README.md) | [繁體中文](README_zh-TW.md)
 
 ---
+<img width="1408" height="866" alt="image" src="https://github.com/user-attachments/assets/48f97268-3f3b-4b94-81bc-6d6f8097eeac" />
 
-## 💡 What is Code Graph Galaxy?
+##  What is Code Graph Galaxy?
 
 Modern codebases grow rapidly. Understanding cross-project dependencies, module hierarchies, and unindexed source changes can quickly become overwhelming in plain text files or static 2D diagrams.
 
@@ -19,30 +20,30 @@ Whether you are onboarding onto a massive project, conducting architecture refac
 
 ---
 
-## ✨ Key Features & Capabilities
+##  Key Features & Capabilities
 
-### 🪐 1. Interactive 3D Galaxy Engine
+###  1. Interactive 3D Galaxy Engine
 - **Hardware-Accelerated 3D Force-Directed Layout**: Smoothly navigate complex graphs with tens of thousands of nodes with dynamic physics simulation, glow bloom effects, and customizable ambient light.
 - **Intuitive Camera Navigation**: Full orbit rotation, multi-touch/mouse wheel zooming, smooth panning, and **one-click camera reset** (`Ctrl+0`).
 - **Autonomous Galaxy Rotation**: One-click auto-spin (`Ctrl+Space` / Auto Rotate button) for architecture presentations, demos, and live team walkthroughs.
 
-### 📐 2. Multi-Tier LOD (Level of Detail) Dynamic Filter
+###  2. Multi-Tier LOD (Level of Detail) Dynamic Filter
 Adapt visual density on the fly without overwhelming the screen:
-- **🏛️ Architecture Mode (Default)**: Highlights high-level structures (Files, Classes, Interfaces, Namespaces) to reveal core module boundaries and subsystem relationships.
-- **⚙️ Standard Mode**: Unfolds essential implementation symbols (Functions, Methods, API Routes).
-- **🔬 Detailed Mode**: Complete graph representation including variables, types, and internal AST hops.
-- **🎨 Customized Mode**: Granular filter toggles allowing you to selectively isolate specific symbol kinds.
+- ** Architecture Mode (Default)**: Highlights high-level structures (Files, Classes, Interfaces, Namespaces) to reveal core module boundaries and subsystem relationships.
+- ** Standard Mode**: Unfolds essential implementation symbols (Functions, Methods, API Routes).
+- ** Detailed Mode**: Complete graph representation including variables, types, and internal AST hops.
+- ** Customized Mode**: Granular filter toggles allowing you to selectively isolate specific symbol kinds.
 
-### ⚡ 3. Seamless Synchronized Indexing (Zero Camera Drift)
-- **⚡ Sync from CodeGraph**: Instantly refresh the dependency graph when your codebase changes.
+###  3. Seamless Synchronized Indexing (Zero Camera Drift)
+- ** Sync from CodeGraph**: Instantly refresh the dependency graph when your codebase changes.
 - **Vantage Point Preservation**: Unlike conventional visualization tools that reset positions upon reloading, Code Graph Galaxy locks your camera coordinates, orbit angles, and physics vectors, ensuring seamless exploration continuity.
 
-### 📁 4. Multi-Project Repository Explorer & Tree Navigation
+###  4. Multi-Project Repository Explorer & Tree Navigation
 - **Hierarchical Project Tree**: Explore folder structures with live folder collapse/expand, directory-level unindexed counters, and direct file focus.
 - **Instant AST Jump**: Click any file in the explorer tree to immediately locate and orbit-focus its corresponding 3D node.
 - **Visual Status Badges**: Clear visual tags distinguishing between indexed nodes and unindexed disk files.
 
-### 🔍 5. Deep Code Inspector & IDE Quick Jump
+###  5. Deep Code Inspector & IDE Quick Jump
 - **Contextual Side Drawer**: Click any node to instantly view its qualified name, type signature, documentation, and line numbers.
 - **Built-in Code Preview**: Read live syntax-highlighted source code snippets without leaving the visualizer.
 - **1-Click IDE Launch**: Open the selected file directly at the exact line in **VS Code** or **Antigravity IDE**.
@@ -55,7 +56,7 @@ Adapt visual density on the fly without overwhelming the screen:
 
 ---
 
-## 🖥️ Cross-Platform Support
+##  Cross-Platform Support
 
 Code Graph Galaxy is available as a native desktop application and a portable CLI tool across all major platforms:
 
@@ -65,7 +66,7 @@ Code Graph Galaxy is available as a native desktop application and a portable CL
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Option A: Pre-built Desktop App (Recommended)
 Download the latest version for your OS from [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases):
@@ -116,7 +117,7 @@ npm start
 
 ---
 
-## 🏗️ Architecture & Extensibility
+##  Architecture & Extensibility
 
 ```
 codegraph-galaxy/
@@ -143,7 +144,7 @@ codegraph-galaxy/
 
 ---
 
-## 🤝 Contributing
+##  Contributing
 
 We welcome community contributions, bug reports, and feature requests!
 - Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).

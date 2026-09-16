@@ -41,10 +41,11 @@
       "electron/**/*",
       "static/**/*",
       "templates/**/*",
+      "assets/**/*",
       "index.html",
       "app.py",
-      "package.json",
-      "assets/**/*"
+      "codegraph_galaxy/**/*",
+      "package.json"
     ],
     "extraResources": [
       {
@@ -52,8 +53,8 @@
         "to": "app.py"
       },
       {
-        "from": "index.html",
-        "to": "index.html"
+        "from": "codegraph_galaxy",
+        "to": "codegraph_galaxy"
       },
       {
         "from": "templates",
@@ -145,8 +146,10 @@
     "asar": true,
     "asarUnpack": [
       "app.py",
+      "codegraph_galaxy/**/*",
       "templates/**/*",
-      "static/**/*"
+      "static/**/*",
+      "assets/**/*"
     ],
     "icon": "assets/icon.png"
   },

@@ -49,4 +49,4 @@ jobs:
           node -c electron/main.js
           node -c electron/preload.js
           node -c bin/cli.js
-          node -c static/galaxy.js
+          node -c codegraph_galaxy/static/galaxy.js

@@ -1,0 +1,42 @@
+name: 🐛 Bug Report
+description: Create a report to help us fix a bug in CodeGraph 3D
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report an issue!
+  - type: input
+    id: version
+    attributes:
+      label: CodeGraph 3D Version
+      placeholder: e.g. 1.0.0 (or commit hash)
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Execution Environment
+      options:
+        - Electron Desktop App
+        - Web Browser (Chrome / Edge / Firefox)
+        - CLI (npx / python)
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Open project X
+        2. Filter by node type Y
+        3. Click 'Sync from CodeGraph'
+    validations:
+      required: true

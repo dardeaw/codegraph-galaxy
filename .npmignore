@@ -1,0 +1,10 @@
+.git/
+.github/
+dist/
+__pycache__/
+*.pyc
+*.egg-info/
+.codegraph/
+.DS_Store
+*.log
+scratch/

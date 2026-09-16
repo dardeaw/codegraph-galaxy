@@ -1,6 +1,6 @@
 {
   "name": "codegraph-galaxy",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "A breathtaking interactive 3D/Galaxy visualizer and code intelligence suite for CodeGraph databases.",
   "main": "electron/main.js",
   "bin": {
@@ -39,10 +39,7 @@
     },
     "files": [
       "electron/**/*",
-      "static/**/*",
-      "templates/**/*",
       "assets/**/*",
-      "index.html",
       "app.py",
       "codegraph_galaxy/**/*",
       "package.json"
@@ -55,14 +52,6 @@
       {
         "from": "codegraph_galaxy",
         "to": "codegraph_galaxy"
-      },
-      {
-        "from": "templates",
-        "to": "templates"
-      },
-      {
-        "from": "static",
-        "to": "static"
       },
       {
         "from": "assets",
@@ -147,8 +136,6 @@
     "asarUnpack": [
       "app.py",
       "codegraph_galaxy/**/*",
-      "templates/**/*",
-      "static/**/*",
       "assets/**/*"
     ],
     "icon": "assets/icon.png"

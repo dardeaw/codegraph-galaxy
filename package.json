@@ -43,7 +43,8 @@
       "templates/**/*",
       "index.html",
       "app.py",
-      "package.json"
+      "package.json",
+      "assets/**/*"
     ],
     "extraResources": [
       {
@@ -61,6 +62,10 @@
       {
         "from": "static",
         "to": "static"
+      },
+      {
+        "from": "assets",
+        "to": "assets"
       }
     ],
     "win": {
@@ -78,7 +83,8 @@
           ]
         }
       ],
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": true,
@@ -107,7 +113,8 @@
         }
       ],
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "icon": "assets/icon.png"
     },
     "linux": {
       "category": "Development",
@@ -132,14 +139,16 @@
         }
       ],
       "synopsis": "Interactive 3D Galaxy visualization for CodeGraph",
-      "description": "Explore codebases as a 3D Galaxy network with semantic call graphs."
+      "description": "Explore codebases as a 3D Galaxy network with semantic call graphs.",
+      "icon": "assets/icon.png"
     },
     "asar": true,
     "asarUnpack": [
       "app.py",
       "templates/**/*",
       "static/**/*"
-    ]
+    ],
+    "icon": "assets/icon.png"
   },
   "productName": "Code Graph Galaxy"
 }

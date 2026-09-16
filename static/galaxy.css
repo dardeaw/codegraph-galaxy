@@ -921,3 +921,22 @@ html, body {
 .tree-arrow.open:hover {
   transform: rotate(90deg) scale(1.15) !important;
 }
+
+/* Clickable source code symbol references (Mode 5 Colors) */
+.code-ref-token {
+  cursor: pointer;
+  padding: 1px 3px;
+  margin: 0 -1px;
+  border-radius: 3px;
+  font-weight: 600;
+  display: inline;
+  transition: all 0.18s ease;
+  position: relative;
+}
+
+.code-ref-token:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+  box-shadow: 0 0 10px rgba(88, 166, 255, 0.5);
+  text-decoration: underline !important;
+  z-index: 10;
+}

@@ -1,3 +1,125 @@
+
+// ==========================================
+// Source Code Reference Highlighter & 3D/Explorer Linkage
+// ==========================================
+function getSymbolMap() {
+  const map = new Map();
+  if (!rawData || !rawData.nodes) return map;
+
+  rawData.nodes.forEach(node => {
+    if (!node.name || typeof node.name !== 'string' || node.name.length < 2) return;
+    const key = node.name.trim();
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+    map.get(key).push(node);
+  });
+  return map;
+}
+
+const RESERVED_KEYWORDS = new Set([
+  'if', 'else', 'for', 'while', 'return', 'def', 'class', 'import', 'from', 'as',
+  'let', 'const', 'var', 'function', 'export', 'default', 'interface', 'type',
+  'try', 'catch', 'finally', 'throw', 'new', 'this', 'self', 'true', 'false',
+  'null', 'undefined', 'None', 'True', 'False', 'in', 'is', 'not', 'and', 'or',
+  'string', 'number', 'boolean', 'any', 'void', 'object', 'int', 'str', 'dict', 'list',
+  'public', 'private', 'protected', 'async', 'await', 'static', 'readonly', 'declare'
+]);
+
+function renderHighlightedCode(codeText, currentProject, containerEl) {
+  if (!containerEl) return;
+  if (!codeText) {
+    containerEl.innerHTML = '<span style="color: #6e7681;">// (Empty source snippet)</span>';
+    return;
+  }
+
+  const symbolMap = getSymbolMap();
+  const allSymbols = Array.from(symbolMap.keys())
+    .filter(name => !RESERVED_KEYWORDS.has(name) && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name))
+    .sort((a, b) => b.length - a.length);
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  if (allSymbols.length === 0) {
+    containerEl.innerHTML = escapeHtml(codeText);
+    return;
+  }
+
+  // Regex pattern matching word boundaries
+  const escapedPattern = allSymbols.slice(0, 800).map(s => s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
+  const tokenRegex = new RegExp(`\\b(${escapedPattern})\\b`, 'g');
+
+  const escapedText = escapeHtml(codeText);
+  const highlighted = escapedText.replace(tokenRegex, (matched) => {
+    const nodes = symbolMap.get(matched);
+    if (!nodes || nodes.length === 0) return matched;
+
+    // Pick best matching node (prefer same project)
+    const node = (currentProject ? nodes.find(n => n.project === currentProject) : null) || nodes[0];
+    const color = KIND_COLORS[node.kind] || '#58a6ff';
+    const kindTag = (node.kind || 'symbol').toUpperCase();
+    const projTag = node.project || '';
+
+    return `<span class="code-ref-token" data-symbol-name="${escapeHtml(node.name)}" data-node-id="${escapeHtml(node.id || '')}" data-project="${escapeHtml(projTag)}" style="color: ${color}; border-bottom: 1px dotted ${color}aa;" title="🔗 [${kindTag}] ${escapeHtml(node.name)} (${escapeHtml(projTag)})&#10;👉 Click to jump in 3D Galaxy & Explorer">${matched}</span>`;
+  });
+
+  containerEl.innerHTML = highlighted;
+}
+
+// Global click handler for reference jump
+function handleCodeReferenceClick(e) {
+  const token = e.target.closest('.code-ref-token');
+  if (!token) return;
+
+  const symName = token.getAttribute('data-symbol-name');
+  const nodeId = token.getAttribute('data-node-id');
+  const proj = token.getAttribute('data-project');
+
+  if (!rawData || !rawData.nodes) return;
+
+  let targetNode = null;
+  if (nodeId) {
+    targetNode = rawData.nodes.find(n => n.id === nodeId);
+  }
+  if (!targetNode && symName) {
+    targetNode = rawData.nodes.find(n => n.name === symName && n.project === proj) ||
+                 rawData.nodes.find(n => n.name === symName);
+  }
+
+  if (targetNode) {
+    // 1. If target node's kind is hidden in current LOD, unhide it
+    if (hiddenKinds && hiddenKinds.has(targetNode.kind)) {
+      hiddenKinds.delete(targetNode.kind);
+      updateGraphData();
+    }
+
+    // 2. Highlight in 3D Graph & focus camera
+    if (typeof highlightScope === 'function') {
+      highlightScope('node', targetNode);
+    }
+    if (typeof focusOnNode === 'function') {
+      focusOnNode(targetNode);
+    }
+
+    // 3. Link with Explorer tree
+    if (typeof syncExplorerSelection === 'function') {
+      syncExplorerSelection(targetNode);
+    }
+
+    // 4. Update Inspector
+    if (typeof openDrawer === 'function') {
+      openDrawer(targetNode);
+    }
+  }
+}
+
 // ==========================================
 // i18n Translation Dictionary
 // ==========================================
@@ -1329,17 +1451,22 @@ function openDrawer(node) {
   document.getElementById('code-lines-badge').innerText = `Line ${startLine} - ${endLine}`;
   document.getElementById('d-code').innerText = t('drawer_loading_code');
 
+  const codeContainer = document.getElementById('d-code');
   if (node.file_path && node.project) {
     fetch(`/api/code?project=${encodeURIComponent(node.project)}&file_path=${encodeURIComponent(node.file_path)}&start_line=${startLine}&end_line=${endLine}`)
       .then(res => res.json())
       .then(data => {
-        document.getElementById('d-code').innerText = data.code || '// Source snippet unavailable';
+        if (data.code) {
+          renderHighlightedCode(data.code, node.project, codeContainer);
+        } else {
+          codeContainer.innerHTML = '<span style="color:#6e7681;">// Source snippet unavailable</span>';
+        }
       })
-      .catch(() => {
-        document.getElementById('d-code').innerText = '// Error reading source file';
+      .catch((err) => {
+        codeContainer.innerHTML = `<span style="color:#f85149;">// Error reading source file: ${escapeHtml(err.message || '')}</span>`;
       });
   } else {
-    document.getElementById('d-code').innerText = '// Virtual or external symbol';
+    codeContainer.innerHTML = '<span style="color:#6e7681;">// Virtual or external symbol</span>';
   }
 
   // Relations
@@ -2441,3 +2568,6 @@ window.executeExcludeSelected = async function() {
     if (btn) btn.disabled = false;
   }
 };
+
+
+document.addEventListener('click', handleCodeReferenceClick);

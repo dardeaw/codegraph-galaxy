@@ -20,6 +20,10 @@ def resolve_template_path(app_root: str) -> Optional[str]:
             return c
     return None
 
+def _known_repo_paths(repos: dict) -> set:
+    """Absolute paths of discovered repositories (allowlist for CLI actions)."""
+    return {os.path.abspath(p) for p in repos.values()}
+
 def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional[List[str]] = None) -> Flask:
     """Create and configure the Code Graph Galaxy Flask application."""
     if initial_paths and not search_roots:
@@ -118,8 +122,17 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def get_code():
         proj = request.args.get("project", "")
         file_path = request.args.get("file_path", "")
-        start_line = int(request.args.get("start_line", 1))
-        end_line = int(request.args.get("end_line", start_line + 50))
+        try:
+            start_line = int(request.args.get("start_line", 1))
+            end_line = int(request.args.get("end_line", start_line + 50))
+        except (TypeError, ValueError):
+            return jsonify({"code": "// Invalid line range", "total_lines": 0}), 400
+        if start_line < 1:
+            start_line = 1
+        if end_line < start_line:
+            end_line = start_line + 50
+        # Cap the window so one request can't dump a giant file.
+        end_line = min(end_line, start_line + 500)
 
         roots = get_search_roots(search_roots)
         repos = scan_repositories(roots)
@@ -138,7 +151,14 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         roots = get_search_roots(search_roots)
         repos = scan_repositories(roots)
         
-        target_repos = [target_path] if target_path else [p for p in repos.values() if get_db_path(p)]
+        target_repos: list = []
+        if target_path:
+            abs_target = os.path.abspath(target_path)
+            if abs_target not in _known_repo_paths(repos):
+                return jsonify({os.path.basename(abs_target): {"success": False, "error": "Unknown repository path"}}), 400
+            target_repos = [abs_target]
+        else:
+            target_repos = [p for p in repos.values() if get_db_path(p)]
         outputs = execute_sync(target_repos)
         return jsonify(outputs)
 
@@ -170,7 +190,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def init_project():
         data = request.get_json(silent=True) or {}
         target_path = data.get("path", "").strip()
-        if not target_path or not os.path.exists(target_path):
+        if not target_path or not os.path.isdir(target_path):
             return jsonify({"success": False, "error": "Invalid project path"}), 400
 
         ok, out = execute_init(target_path)
@@ -182,8 +202,13 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def uninit_project():
         data = request.get_json(silent=True) or {}
         target_path = data.get("path", "").strip()
-        if not target_path or not os.path.exists(target_path):
+        if not target_path or not os.path.isdir(target_path):
             return jsonify({"success": False, "error": "Invalid project path"}), 400
+
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        if os.path.abspath(target_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False, "error": "Unknown repository path"}), 400
 
         ok, out = execute_uninit(target_path)
         if ok:
@@ -194,8 +219,13 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def reindex_project():
         data = request.get_json(silent=True) or {}
         target_path = data.get("path", "").strip()
-        if not target_path or not os.path.exists(target_path):
+        if not target_path or not os.path.isdir(target_path):
             return jsonify({"success": False, "error": "Invalid project path"}), 400
+
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        if os.path.abspath(target_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False, "error": "Unknown repository path"}), 400
 
         ok, out = execute_reindex(target_path)
         if ok:

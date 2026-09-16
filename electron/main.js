@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron')
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
+const fs = require('fs');
 
 let mainWindow = null;
 let pythonProcess = null;
@@ -20,31 +21,55 @@ function checkServerReady(port) {
   });
 }
 
+function resolveAppPy() {
+  const candidates = [
+    path.join(process.resourcesPath, 'app.py'),
+    path.join(process.resourcesPath, 'app.asar.unpacked', 'app.py'),
+    path.join(__dirname, '..', 'app.py'),
+    path.join(app.getAppPath(), 'app.py')
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      return c;
+    }
+  }
+  return path.join(__dirname, '..', 'app.py');
+}
+
 async function startPythonBackend(port) {
   const isAlreadyRunning = await checkServerReady(port);
   if (isAlreadyRunning) {
-    console.log(`[CodeGraph] Python backend is already running on port ${port}`);
+    console.log(`[CodeGraph Galaxy] Python backend already active on port ${port}`);
     return;
   }
 
-  const appPyPath = path.join(__dirname, '..', 'app.py');
-  console.log(`[CodeGraph] Launching Python backend daemon on port ${port}...`);
+  const appPyPath = resolveAppPy();
+  const workingDir = path.dirname(appPyPath);
+  console.log(`[CodeGraph Galaxy] Launching Python backend: ${appPyPath} (cwd: ${workingDir})`);
 
-  pythonProcess = spawn('python', [appPyPath, '-p', port.toString(), '-H', '127.0.0.1'], {
-    cwd: path.join(__dirname, '..'),
-    stdio: 'ignore',
-    windowsHide: true
-  });
+  // Detect python executable on Windows / Unix
+  const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
 
-  pythonProcess.on('error', (err) => {
-    console.error('[CodeGraph] Failed to spawn Python backend:', err);
-  });
+  try {
+    pythonProcess = spawn(pyCmd, [appPyPath, '-p', port.toString(), '-H', '127.0.0.1'], {
+      cwd: workingDir,
+      stdio: 'ignore',
+      windowsHide: true,
+      env: { ...process.env, PYTHONUNBUFFERED: '1' }
+    });
 
-  // Wait for server to become responsive
-  for (let i = 0; i < 25; i++) {
+    pythonProcess.on('error', (err) => {
+      console.error('[CodeGraph Galaxy] Failed to spawn Python daemon:', err);
+    });
+  } catch (err) {
+    console.error('[CodeGraph Galaxy] Spawn exception:', err);
+  }
+
+  // Poll until backend is responsive
+  for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 300));
     if (await checkServerReady(port)) {
-      console.log('[CodeGraph] Python backend successfully ready!');
+      console.log('[CodeGraph Galaxy] Python backend ready!');
       return;
     }
   }
@@ -56,7 +81,7 @@ function createMainWindow(port) {
     height: 920,
     minWidth: 1024,
     minHeight: 680,
-    title: 'Code Graph Galaxy - Multi-Project Architecture Topology',
+    title: 'Code Graph Galaxy - 3D Multi-Project Architecture Topology',
     backgroundColor: '#090d13',
     darkTheme: true,
     show: false,
@@ -68,7 +93,6 @@ function createMainWindow(port) {
     }
   });
 
-  // Build sleek application menu
   const menuTemplate = [
     {
       label: 'File',
@@ -112,8 +136,8 @@ function createMainWindow(port) {
       label: 'Help',
       submenu: [
         {
-          label: 'GitHub Documentation',
-          click: () => shell.openExternal('https://github.com/your-org/codegraph-viz')
+          label: 'GitHub Repository',
+          click: () => shell.openExternal('https://github.com/codegraph/codegraph-galaxy')
         },
         {
           label: 'About Code Graph Galaxy',
@@ -121,7 +145,7 @@ function createMainWindow(port) {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About Code Graph Galaxy',
-              message: 'Code Graph Galaxy Topology Visualizer',
+              message: 'Code Graph Galaxy 3D Visualizer',
               detail: 'Next-Generation Multi-Project Codebase Architecture & AST Topology Explorer.\nBuilt with Three.js, WebGL & Electron.'
             });
           }
@@ -144,7 +168,6 @@ function createMainWindow(port) {
   });
 }
 
-// IPC Handlers for native OS folder picker
 ipcMain.handle('dialog:openDirectory', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory'],

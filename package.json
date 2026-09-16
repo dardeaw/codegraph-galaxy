@@ -40,6 +40,7 @@
     "files": [
       "electron/**/*",
       "static/**/*",
+      "templates/**/*",
       "index.html",
       "app.py",
       "package.json"
@@ -48,6 +49,18 @@
       {
         "from": "app.py",
         "to": "app.py"
+      },
+      {
+        "from": "index.html",
+        "to": "index.html"
+      },
+      {
+        "from": "templates",
+        "to": "templates"
+      },
+      {
+        "from": "static",
+        "to": "static"
       }
     ],
     "win": {
@@ -120,7 +133,13 @@
       ],
       "synopsis": "Interactive 3D Galaxy visualization for CodeGraph",
       "description": "Explore codebases as a 3D Galaxy network with semantic call graphs."
-    }
+    },
+    "asar": true,
+    "asarUnpack": [
+      "app.py",
+      "templates/**/*",
+      "static/**/*"
+    ]
   },
   "productName": "Code Graph Galaxy"
 }

@@ -75,9 +75,27 @@ def extract_code_snippet(
     start_line: int,
     end_line: int
 ) -> Tuple[Dict[str, Any], int]:
-    """Safely read lines from a source file."""
-    abs_file = os.path.join(repo_path, file_path)
-    if not os.path.exists(abs_file):
+    """Safely read lines from a source file, with strict path traversal protection."""
+    if not file_path or not isinstance(file_path, str):
+        return {"code": "// Invalid file path", "total_lines": 0}, 400
+
+    raw_path = file_path.replace("\\", "/")
+    # Reject relative traversal or absolute roots
+    if ".." in raw_path.split("/") or raw_path.startswith("/") or os.path.isabs(file_path):
+        return {"code": "// Access denied: Path traversal detected", "total_lines": 0}, 403
+
+    abs_repo = os.path.abspath(repo_path)
+    clean_file = os.path.normpath(file_path).lstrip("/\\")
+    abs_file = os.path.abspath(os.path.join(abs_repo, clean_file))
+
+    try:
+        common = os.path.commonpath([abs_repo, abs_file])
+        if common != abs_repo:
+            return {"code": "// Access denied: Path traversal detected", "total_lines": 0}, 403
+    except (ValueError, Exception):
+        return {"code": "// Access denied: Invalid path", "total_lines": 0}, 403
+
+    if not os.path.isfile(abs_file):
         return {"code": "// File not found on disk", "total_lines": 0}, 200
 
     try:

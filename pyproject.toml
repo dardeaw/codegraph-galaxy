@@ -3,20 +3,30 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "codegraph-viz"
-version = "0.1.0"
-description = "Interactive 3D WebGL Code Architecture Visualizer & Repository Manager for CodeGraph."
+name = "codegraph-galaxy"
+version = "1.0.0"
+description = "Interactive 3D Galaxy visualization and code intelligence explorer for CodeGraph databases"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "CodeGraph Team" }
+    { name = "CodeGraph Galaxy Team" }
+]
+keywords = [
+    "codegraph",
+    "galaxy",
+    "visualization",
+    "3d",
+    "ast",
+    "code-intelligence",
+    "threejs",
+    "webgl",
+    "electron"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -24,21 +34,16 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Scientific/Engineering :: Visualization"
 ]
 dependencies = [
-    "Flask>=2.0.0"
+    "Flask>=2.0.0",
+    "requests>=2.25.0"
 ]
 
 [project.scripts]
-codegraph-viz = "codegraph_viz.cli:main"
+codegraph-galaxy = "codegraph_galaxy.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["codegraph_viz*"]
-
-[tool.setuptools.package-data]
-codegraph_viz = [
-    "static/*",
-    "templates/*"
-]
+include = ["codegraph_galaxy*"]

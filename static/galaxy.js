@@ -1,6 +1,143 @@
 
 // ==========================================
-// Source Code Reference Highlighter & 3D/Explorer Linkage
+// Universal 5-Color Code Syntax & Symbol Reference Highlighter
+// ==========================================
+function getSymbolMap() {
+  const map = new Map();
+  if (!rawData || !rawData.nodes) return map;
+
+  rawData.nodes.forEach(node => {
+    if (!node.name || typeof node.name !== 'string' || node.name.length < 2) return;
+    const key = node.name.trim();
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+    map.get(key).push(node);
+  });
+  return map;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function renderHighlightedCode(codeText, currentProject, containerEl) {
+  if (!containerEl) return;
+  if (!codeText) {
+    containerEl.innerHTML = '<span style="color: #6e7681;">// (Empty source snippet)</span>';
+    return;
+  }
+
+  const symbolMap = getSymbolMap();
+  const allSymbols = Array.from(symbolMap.keys())
+    .filter(name => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name))
+    .sort((a, b) => b.length - a.length);
+
+  // Split into lines for syntax and reference tokenization
+  const rawLines = codeText.split(String.fromCharCode(10));
+  let htmlResult = '';
+
+  const symbolSet = new Set(allSymbols);
+  const symbolRegex = allSymbols.length > 0 
+    ? new RegExp('\\b(' + allSymbols.slice(0, 1000).map(s => s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|') + ')\\b', 'g')
+    : null;
+
+  // Keyword regex (Mode Color: Import/Route Purple #bc8cff)
+  const kwRegex = /\b(import|export|from|as|class|interface|type|extends|implements|function|def|return|if|else|for|while|try|catch|finally|throw|new|async|await|const|let|var|public|private|protected|static|readonly|declare)\b/g;
+
+  rawLines.forEach((line) => {
+    let esc = escapeHtml(line);
+
+    // 1. Highlight comments (gray)
+    if (esc.trim().startsWith('//') || esc.trim().startsWith('#') || esc.trim().startsWith('*') || esc.trim().startsWith('/*')) {
+      htmlResult += `<span class="code-syntax-comment">${esc}</span>\n`;
+      return;
+    }
+
+    // 2. Highlight known AST symbol references (with 5 Mode colors and click linkage)
+    if (symbolRegex) {
+      esc = esc.replace(symbolRegex, (matched) => {
+        const nodes = symbolMap.get(matched);
+        if (!nodes || nodes.length === 0) return matched;
+        const node = (currentProject ? nodes.find(n => n.project === currentProject) : null) || nodes[0];
+        const color = KIND_COLORS[node.kind] || '#58a6ff';
+        const kindTag = (node.kind || 'symbol').toUpperCase();
+        const projTag = node.project || '';
+
+        return `<span class="code-ref-token" data-symbol-name="${escapeHtml(node.name)}" data-node-id="${escapeHtml(node.id || '')}" data-project="${escapeHtml(projTag)}" style="color:${color}; border-color:${color}88;" title="🔗 [${kindTag}] ${escapeHtml(node.name)} (${escapeHtml(projTag)})&#10;👉 Click to jump in 3D Galaxy & Explorer">${matched}</span>`;
+      });
+    }
+
+    // 3. Highlight standard language keywords in Purple
+    esc = esc.replace(kwRegex, '<span class="code-syntax-kw">$1</span>');
+
+    // 4. Highlight class/interface names in Green
+    esc = esc.replace(/\b(class|interface|type)\s+([a-zA-Z0-9_$]+)/g, '$1 <span class="code-syntax-class">$2</span>');
+
+    // 5. Highlight function/method declarations in Blue
+    esc = esc.replace(/\b(function|def)\s+([a-zA-Z0-9_$]+)/g, '$1 <span class="code-syntax-fn">$2</span>');
+
+    htmlResult += esc + '\n';
+  });
+
+  containerEl.innerHTML = htmlResult;
+}
+
+// Global click event for references
+function handleCodeReferenceClick(e) {
+  const token = e.target.closest('.code-ref-token');
+  if (!token) return;
+
+  const symName = token.getAttribute('data-symbol-name');
+  const nodeId = token.getAttribute('data-node-id');
+  const proj = token.getAttribute('data-project');
+
+  if (!rawData || !rawData.nodes) return;
+
+  let targetNode = null;
+  if (nodeId) {
+    targetNode = rawData.nodes.find(n => n.id === nodeId);
+  }
+  if (!targetNode && symName) {
+    targetNode = rawData.nodes.find(n => n.name === symName && n.project === proj) ||
+                 rawData.nodes.find(n => n.name === symName);
+  }
+
+  if (targetNode) {
+    console.log('[CodeGraph Galaxy] Jumping to reference node:', targetNode.name, targetNode.kind, targetNode.project);
+    
+    // 1. Unhide in LOD if hidden
+    if (hiddenKinds && hiddenKinds.has(targetNode.kind)) {
+      hiddenKinds.delete(targetNode.kind);
+      updateGraphData();
+    }
+
+    // 2. 3D Graph Highlight & Camera Focus
+    if (typeof highlightScope === 'function') {
+      highlightScope('node', targetNode);
+    }
+    if (typeof focusOnNode === 'function') {
+      focusOnNode(targetNode);
+    }
+
+    // 3. Sync Explorer Tree
+    if (typeof syncExplorerSelection === 'function') {
+      syncExplorerSelection(targetNode);
+    }
+
+    // 4. Update Inspector Drawer
+    if (typeof openDrawer === 'function') {
+      openDrawer(targetNode);
+    }
+  }
+}
+
 // ==========================================
 function getSymbolMap() {
   const map = new Map();
@@ -1536,7 +1673,7 @@ function openUnindexedFileDrawer(node) {
   fetch(`/api/code?project=${encodeURIComponent(node.project)}&file_path=${encodeURIComponent(node.file_path)}&start_line=1&end_line=2000`)
     .then(res => res.json())
     .then(data => {
-      document.getElementById('d-code').innerText = `// ⚡ Physical File on Disk (Not Indexed Yet)\n// Click [Index to CodeGraph] on project badge to extract AST symbols.\n\n` + (data.code || '');
+      renderHighlightedCode(data.code, node.project, document.getElementById('d-code'));
     })
     .catch(() => {
       document.getElementById('d-code').innerText = '// Error reading physical file';
@@ -1820,7 +1957,7 @@ function refreshOpenDrawerCode() {
     .then(res => res.json())
     .then(data => {
       if (data.code && document.getElementById('d-code')) {
-        document.getElementById('d-code').innerText = data.code;
+        renderHighlightedCode(data.code, activeNode.project, document.getElementById('d-code'));
       }
     }).catch(() => {});
 }

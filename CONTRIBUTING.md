@@ -11,8 +11,8 @@ Thank you for your interest in contributing to CodeGraph Galaxy! We welcome cont
 ### Local Setup
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-org/codegraph-viz.git
-   cd codegraph-viz
+   git clone https://github.com/dardeaw/codegraph-galaxy.git
+   cd codegraph-galaxy
    ```
 
 2. **Install Python dependencies**:

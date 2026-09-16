@@ -940,3 +940,55 @@ html, body {
   text-decoration: underline !important;
   z-index: 10;
 }
+
+/* Enhanced Code Reference Tokens & Syntax Highlighting */
+.code-ref-token {
+  cursor: pointer;
+  padding: 1px 3px;
+  margin: 0 1px;
+  border-radius: 3px;
+  font-weight: 600;
+  display: inline;
+  text-decoration: underline dotted;
+  transition: all 0.15s ease-in-out;
+  position: relative;
+}
+
+.code-ref-token:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 0 0 10px rgba(88, 166, 255, 0.6);
+  text-decoration: underline solid !important;
+  z-index: 10;
+}
+
+.code-syntax-kw {
+  color: #bc8cff;
+  font-weight: 600;
+}
+
+.code-syntax-class {
+  color: #3fb950;
+  font-weight: 600;
+}
+
+.code-syntax-fn {
+  color: #58a6ff;
+  font-weight: 600;
+}
+
+.code-syntax-str {
+  color: #a5d6ff;
+}
+
+.code-syntax-num {
+  color: #79c0ff;
+}
+
+.code-syntax-comment {
+  color: #8b949e;
+  font-style: italic;
+}
+
+.code-syntax-var {
+  color: #d29922;
+}

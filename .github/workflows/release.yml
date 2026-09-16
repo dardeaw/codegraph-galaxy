@@ -13,6 +13,7 @@ jobs:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
 
@@ -24,24 +25,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Install NPM Dependencies
+        run: npm install
 
       - name: Build & Package Binaries
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
-            npm run dist:win
+            npx electron-builder --win
           elif [ "$RUNNER_OS" == "macOS" ]; then
-            npm run dist:mac
+            npx electron-builder --mac
           else
-            npm run dist:linux
+            npx electron-builder --linux AppImage deb tar.gz
           fi
         shell: bash
 

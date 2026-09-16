@@ -1,6 +1,6 @@
-# Contributing to CodeGraph 3D
+# Contributing to CodeGraph Galaxy
 
-Thank you for your interest in contributing to CodeGraph 3D! We welcome contributions from engineers, researchers, and open-source enthusiasts worldwide.
+Thank you for your interest in contributing to CodeGraph Galaxy! We welcome contributions from engineers, researchers, and open-source enthusiasts worldwide.
 
 ## Development Workflow
 

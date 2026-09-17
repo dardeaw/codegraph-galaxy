@@ -5,7 +5,7 @@ from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
-from .service import execute_sync, execute_init, execute_uninit, execute_reindex
+from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 
 def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
@@ -146,6 +146,11 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         data, status = extract_code_snippet(repo_path, file_path, start_line, end_line)
         return jsonify(data), status
+
+    @app.route("/api/codegraph")
+    def codegraph_status():
+        """CLI availability for the repo-manager connection indicator."""
+        return jsonify(get_codegraph_status())
 
     @app.route("/api/sync", methods=["POST"])
     def sync_all():

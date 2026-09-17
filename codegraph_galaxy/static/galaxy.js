@@ -290,6 +290,13 @@ const I18N = {
     center_tip: 'Reset 3D camera position',
     sync_btn: '⚡ Sync from CodeGraph',
     sync_tip: 'Perform incremental sync from CodeGraph database',
+    cg_conn_checking: 'Checking CodeGraph connection…',
+    cg_conn_ok: 'CodeGraph {version} connected ({source})',
+    cg_conn_mismatch: 'CodeGraph {version} connected — expected {pinned}, reindex recommended',
+    cg_conn_down: 'CodeGraph CLI not found — run npm install',
+    cg_src_bundled: 'bundled',
+    cg_src_system: 'system',
+    cg_sync_unavailable: 'CodeGraph CLI unavailable — sync disabled',
     
     nodes_unit: 'nodes',
     edges_unit: 'links',
@@ -395,6 +402,13 @@ const I18N = {
     center_tip: '重設 3D 視角中心',
     sync_btn: '⚡ 從 CodeGraph 同步',
     sync_tip: '從 CodeGraph 執行增量資料同步',
+    cg_conn_checking: '檢查 CodeGraph 連接中…',
+    cg_conn_ok: 'CodeGraph {version} 已連接（{source}）',
+    cg_conn_mismatch: 'CodeGraph {version} 已連接 — 建議版本 {pinned}，建議重建索引',
+    cg_conn_down: '找不到 CodeGraph CLI — 請執行 npm install',
+    cg_src_bundled: '內建',
+    cg_src_system: '系統',
+    cg_sync_unavailable: 'CodeGraph CLI 無法使用 — 同步已停用',
     
     nodes_unit: '節點',
     edges_unit: '關係鏈',
@@ -563,6 +577,7 @@ function applyLanguage() {
   document.getElementById('btn-close-modal').innerText = t('btn_close');
 
   buildLegends();
+  if (typeof renderCodegraphConn === 'function') renderCodegraphConn();
   if (document.getElementById('path-modal').classList.contains('show')) {
     loadManagerList();
   }
@@ -2091,6 +2106,7 @@ function initTableResizable() {
 function openPathModal() {
   setTimeout(initTableResizable, 50);
   document.getElementById('path-modal').classList.add('show');
+  refreshCodegraphConn();
   loadManagerList();
 }
 function closePathModal() {
@@ -2333,6 +2349,10 @@ document.getElementById('btn-reset-cam').addEventListener('click', () => {
 // Stable Incremental Sync Logic
 // ==========================================
 document.getElementById('btn-sync').addEventListener('click', () => {
+  if (typeof codegraphConn !== 'undefined' && codegraphConn.level === 'down') {
+    showToast(t('cg_conn_down'));
+    return;
+  }
   const btn = document.getElementById('btn-sync');
   btn.innerText = '⚡ Syncing...';
   btn.style.opacity = '0.7';
@@ -2352,6 +2372,58 @@ document.getElementById('btn-sync').addEventListener('click', () => {
     });
 });
 
+// ==================== CodeGraph CLI Connection Status ====================
+// Pure mapper (no DOM): ok | warn | down. Kept side-effect free so it stays
+// unit-testable outside the browser.
+function codegraphConnState(s) {
+  s = s || {};
+  if (!s.available) return { level: 'down' };
+  if (s.matches_pinned === false) {
+    return { level: 'warn', version: s.version, pinned: s.pinned, source: s.source };
+  }
+  return { level: 'ok', version: s.version, pinned: s.pinned, source: s.source };
+}
+
+let codegraphConn = { level: 'unknown' };
+
+function renderCodegraphConn() {
+  const bar = document.getElementById('cg-conn-bar');
+  if (!bar) return;
+  const dot = document.getElementById('cg-conn-dot');
+  const txt = document.getElementById('cg-conn-text');
+  const st = (typeof codegraphConn !== 'undefined') ? codegraphConn : { level: 'unknown' };
+  const colors = { ok: '#3fb950', warn: '#d29922', down: '#f85149', unknown: '#8b949e' };
+  if (dot) dot.style.background = colors[st.level] || colors.unknown;
+  if (txt) {
+    if (st.level === 'unknown') {
+      txt.textContent = t('cg_conn_checking');
+    } else if (st.level === 'down') {
+      txt.textContent = t('cg_conn_down');
+    } else {
+      const src = st.source === 'bundled' ? t('cg_src_bundled') : t('cg_src_system');
+      const key = st.level === 'warn' ? 'cg_conn_mismatch' : 'cg_conn_ok';
+      txt.textContent = t(key, { version: st.version || '?', pinned: st.pinned || '?', source: src });
+    }
+  }
+  const btn = document.getElementById('btn-sync');
+  if (btn) {
+    const down = st.level === 'down';
+    btn.style.opacity = down ? '0.4' : '';
+    btn.title = down ? t('cg_sync_unavailable') : t('sync_tip');
+  }
+}
+
+async function refreshCodegraphConn() {
+  renderCodegraphConn();
+  try {
+    const res = await fetch('/api/codegraph');
+    codegraphConn = codegraphConnState(await res.json());
+  } catch (e) {
+    codegraphConn = { level: 'down' };
+  }
+  renderCodegraphConn();
+}
+
 // Init
 window.addEventListener('DOMContentLoaded', () => {
   init3DGraph();
@@ -2359,6 +2431,7 @@ window.addEventListener('DOMContentLoaded', () => {
   applyLanguage();
   initPanelResizers();
   initDraggableLegend();
+  refreshCodegraphConn();
   loadProjects();
 });
 

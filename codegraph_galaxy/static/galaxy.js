@@ -303,6 +303,10 @@ const I18N = {
     chat_model: 'Model',
     chat_model_loading: 'Loading models…',
     chat_model_unavailable: 'No models available',
+    chat_project: 'Project',
+    chat_project_auto: 'Auto',
+    chat_project_set: 'Project: {name}',
+    chat_prov_test: 'Test',
     chat_placeholder: 'Ask anything about the code…',
     chat_thinking: 'Thinking…',
     chat_trace_title: '🔍 Lookup trace ({n} steps)',
@@ -436,6 +440,10 @@ const I18N = {
     chat_model: '模型',
     chat_model_loading: '載入模型中…',
     chat_model_unavailable: '無可用模型',
+    chat_project: '專案',
+    chat_project_auto: '自動',
+    chat_project_set: '專案：{name}',
+    chat_prov_test: '測試',
     chat_placeholder: '問 codebase 任何問題…',
     chat_thinking: '思考中…',
     chat_trace_title: '🔍 查碼過程（{n} 步）',
@@ -2484,6 +2492,7 @@ function renderChatLabels() {
   set('lbl-btn-chat', t('chat_ask'));
   set('lbl-chat-title', t('chat_title'));
   set('lbl-chat-model', t('chat_model'));
+  set('lbl-chat-project', t('chat_project'));
   const btn = document.getElementById('btn-chat');
   if (btn) btn.title = t('chat_tip');
   const inp = document.getElementById('chat-input');
@@ -2552,6 +2561,143 @@ function loadChatModels() {
   };
 }
 
+function chatCurrentProject() {
+  try {
+    const saved = localStorage.getItem('galaxy-chat-project');
+    if (saved) return saved;
+  } catch (e) { /* ignore */ }
+  const sel = document.getElementById('chat-project');
+  return (sel && sel.value) || '';
+}
+
+function setChatProject(name, silent) {
+  if (name) {
+    try { localStorage.setItem('galaxy-chat-project', name); } catch (e) { /* ignore */ }
+  }
+  const sel = document.getElementById('chat-project');
+  if (sel && name) {
+    const match = Array.from(sel.options).find((o) => o.value === name);
+    if (match) sel.value = name;
+  }
+  if (!silent) showToast(t('chat_project_set', { name: name || '—' }));
+}
+
+function loadChatProjects() {
+  const sel = document.getElementById('chat-project');
+  if (!sel) return;
+  fetch('/api/projects')
+    .then((res) => res.json())
+    .then((data) => {
+      sel.innerHTML = '';
+      const auto = document.createElement('option');
+      auto.value = '';
+      auto.textContent = t('chat_project_auto');
+      sel.appendChild(auto);
+      const list = Array.isArray(data) ? data : (data.projects || []);
+      for (const p of list) {
+        if (!p || !p.name || !(p.nodes > 0)) continue;
+        const opt = document.createElement('option');
+        opt.value = p.name;
+        opt.textContent = `${p.name} (${p.nodes})`;
+        sel.appendChild(opt);
+      }
+      const saved = chatCurrentProject();
+      if (saved) {
+        const match = Array.from(sel.options).find((o) => o.value === saved);
+        if (match) sel.value = saved;
+      }
+    })
+    .catch(() => { /* projects optional */ });
+  sel.onchange = () => {
+    try {
+      if (sel.value) localStorage.setItem('galaxy-chat-project', sel.value);
+      else localStorage.removeItem('galaxy-chat-project');
+    } catch (e) { /* ignore */ }
+  };
+}
+
+function toggleProviderSettings(force) {
+  const box = document.getElementById('chat-prov-settings');
+  if (!box) return;
+  const show = typeof force === 'boolean' ? force : box.style.display === 'none';
+  box.style.display = show ? 'block' : 'none';
+  if (show) refreshProviderList();
+}
+
+function refreshProviderList() {
+  const list = document.getElementById('chat-prov-list');
+  const msg = document.getElementById('chat-prov-msg');
+  if (!list) return;
+  fetch('/api/chat/providers')
+    .then((res) => res.json())
+    .then((data) => {
+      list.innerHTML = '';
+      for (const p of (data && data.providers) || []) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; gap:6px; align-items:center; border:1px solid #21262d; border-radius:6px; padding:4px 8px;';
+        const label = document.createElement('span');
+        label.style.flex = '1';
+        label.textContent = `${p.label || p.id} [${(p.models || []).join(', ')}]${p.source === 'file' ? '' : ' 🔒'}`;
+        row.appendChild(label);
+        const testBtn = document.createElement('button');
+        testBtn.textContent = t('chat_prov_test');
+        testBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#c9d1d9; cursor:pointer; padding:2px 8px; font-size:11px;';
+        testBtn.onclick = () => {
+          if (msg) msg.textContent = '…';
+          fetch(`/api/chat/providers/${encodeURIComponent(p.id)}/test`, { method: 'POST' })
+            .then((r) => r.json())
+            .then((d) => { if (msg) msg.textContent = d.ok ? `✅ ${d.info || ''}` : `❌ ${d.error || ''}`; })
+            .catch(() => { if (msg) msg.textContent = '❌'; });
+        };
+        row.appendChild(testBtn);
+        if (p.source === 'file') {
+          const delBtn = document.createElement('button');
+          delBtn.textContent = '✕';
+          delBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#f85149; cursor:pointer; padding:2px 8px; font-size:11px;';
+          delBtn.onclick = () => {
+            fetch(`/api/chat/providers/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
+              .then(() => { refreshProviderList(); loadChatModels(); })
+              .catch(() => { /* ignore */ });
+          };
+          row.appendChild(delBtn);
+        }
+        list.appendChild(row);
+      }
+    })
+    .catch(() => { /* ignore */ });
+}
+
+function addChatProvider() {
+  const msg = document.getElementById('chat-prov-msg');
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const payload = {
+    label: val('chat-prov-label'),
+    base: val('chat-prov-base'),
+    key: val('chat-prov-key'),
+    models: val('chat-prov-models').split(',').map((s) => s.trim()).filter(Boolean),
+  };
+  fetch('/api/chat/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+    .then((res) => res.json().then((d) => ({ status: res.status, body: d })))
+    .then(({ status, body }) => {
+      if (status === 200 && body.bSuccess) {
+        if (msg) msg.textContent = `✅ ${body.provider.id}`;
+        ['chat-prov-label', 'chat-prov-base', 'chat-prov-key', 'chat-prov-models'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        refreshProviderList();
+        loadChatModels();
+      } else if (msg) {
+        msg.textContent = `❌ ${(body && body.strError) || status}`;
+      }
+    })
+    .catch(() => { if (msg) msg.textContent = '❌'; });
+}
+
 function toggleChatPanel(force) {
   const panel = document.getElementById('chat-panel');
   if (!panel) return;
@@ -2561,6 +2707,7 @@ function toggleChatPanel(force) {
     renderChatLabels();
     renderChatChips();
     loadChatModels();
+    loadChatProjects();
     const inp = document.getElementById('chat-input');
     if (inp) {
       inp.focus();
@@ -2641,9 +2788,14 @@ function sendChatMessage(text) {
   traceRows.style.cssText = 'align-self:flex-start; max-width:94%; font-size:11px; color:#8b949e; display:flex; flex-direction:column; gap:2px;';
   document.getElementById('chat-msgs').appendChild(traceRows);
 
+  const sel = document.getElementById('chat-project');
+  if (sel && !sel.dataset.bound) {
+    sel.dataset.bound = '1';
+    sel.addEventListener('change', () => setChatProject(sel.value, true));
+  }
   const payload = {
     message: text,
-    context: { vHistory: chatHistory.slice(-10) },
+    context: { vHistory: chatHistory.slice(-10), strProject: chatCurrentProject() },
     ...chatSelectedModel(),
   };
   try {
@@ -2701,6 +2853,7 @@ function sendChatMessage(text) {
 function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   const reply = (done && done.strReply) || streamed || '';
   aiDiv.textContent = reply;
+  if (done && done.strProject) setChatProject(done.strProject, true);
   const highlights = (done && done.vHighlights) || [];
   const trace = (done && done.vTrace) || steps;
   if (trace && trace.length) {

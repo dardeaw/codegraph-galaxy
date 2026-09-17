@@ -50,7 +50,7 @@ def FnGetChatDefault() -> Dict[str, Any]:
 
 
 def FnListProviders() -> Dict[str, Any]:
-    """Probe local Ollama tags + optional OpenAI-compatible custom endpoint."""
+    """Probe local Ollama tags + env custom + file providers (opencode-like management)."""
     vProviders: List[Dict[str, Any]] = []
     vOllamaModels: List[str] = []
     try:
@@ -61,14 +61,118 @@ def FnListProviders() -> Dict[str, Any]:
         vOllamaModels = []
     if vOllamaModels or True:
         vProviders.append({"id": "ollama", "label": f"Ollama local ({LLM_URL})",
-                           "models": vOllamaModels or [LLM_MODEL],
-                           "available": bool(vOllamaModels)})
+                           "models": vOllamaModels or [LLM_MODEL], "available": bool(vOllamaModels),
+                           "source": "builtin", "base": LLM_URL})
     if CUSTOM_BASE:
         vModels = [m.strip() for m in CUSTOM_MODEL.split(",") if m.strip()] or ["default"]
         vProviders.append({"id": "custom", "label": f"Custom OpenAI-compatible ({CUSTOM_BASE})",
-                           "models": vModels, "available": True})
+                           "models": vModels, "available": True, "source": "env",
+                           "base": CUSTOM_BASE})
+    for dicP in _FnLoadFileProviders().get("providers", []):
+        vProviders.append({**dicP, "source": "file", "available": True,
+                           "key": "***" if dicP.get("key") else ""})
     dicDef = FnGetChatDefault()
     return {"providers": vProviders, "current": dicDef}
+
+
+def _FnConfigPath() -> str:
+    return os.environ.get("GALAXY_LLM_FILE") or os.path.join(
+        os.path.expanduser("~"), ".codegraph-galaxy", "llm.json")
+
+
+def _FnLoadFileProviders() -> Dict[str, Any]:
+    try:
+        with open(_FnConfigPath(), "r", encoding="utf-8") as f:
+            dicData = json.load(f)
+        if isinstance(dicData, dict):
+            vP = dicData.get("providers") or []
+            return {"providers": [p for p in vP if isinstance(p, dict) and p.get("id")],
+                    "current": dicData.get("current") or {}}
+    except Exception:
+        pass
+    return {"providers": [], "current": {}}
+
+
+def _FnSaveFileProviders(dicData: Dict[str, Any]) -> None:
+    strPath = _FnConfigPath()
+    os.makedirs(os.path.dirname(strPath), exist_ok=True)
+    with open(strPath, "w", encoding="utf-8") as f:
+        json.dump(dicData, f, ensure_ascii=False, indent=2)
+
+
+def _FnSlug(strLabel: str) -> str:
+    import re
+    s = re.sub(r"[^a-z0-9]+", "-", str(strLabel or "custom").strip().lower()).strip("-")
+    return s or "custom"
+
+
+def FnAddProvider(str_label: str, str_base: str, str_key: str = "",
+                  v_models: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Add a user provider (persisted to JSON file). Returns the entry."""
+    strBase = (str_base or "").rstrip("/")
+    if not str_label or not strBase:
+        raise ValueError("label 與 base URL 不可為空")
+    dicData = _FnLoadFileProviders()
+    vP = dicData["providers"]
+    strId = _FnSlug(str_label)
+    if any(p.get("id") == strId for p in vP):
+        strId = f"{strId}-{len(vP) + 1}"
+    dicEntry = {"id": strId, "label": str_label.strip(), "base": strBase,
+                "key": str_key or "",
+                "models": [m.strip() for m in (v_models or []) if str(m).strip()] or ["default"]}
+    vP.append(dicEntry)
+    dicData["providers"] = vP
+    _FnSaveFileProviders(dicData)
+    return {**dicEntry, "key": "***" if dicEntry["key"] else ""}
+
+
+def FnDeleteProvider(str_id: str) -> bool:
+    """Delete a file-based user provider. Built-in/env ones are protected."""
+    dicData = _FnLoadFileProviders()
+    vP = dicData["providers"]
+    vKept = [p for p in vP if p.get("id") != str_id]
+    if len(vKept) == len(vP):
+        return False
+    dicData["providers"] = vKept
+    _FnSaveFileProviders(dicData)
+    return True
+
+
+def _FnFindProviderEntry(str_id: str) -> Optional[Dict[str, Any]]:
+    strId = (str_id or "").strip().lower()
+    if strId in ("ollama", ""):
+        return {"id": "ollama", "label": "Ollama local", "base": LLM_URL,
+                "key": "", "proto": "ollama"}
+    if strId == "custom" and CUSTOM_BASE:
+        return {"id": "custom", "label": "Custom", "base": CUSTOM_BASE,
+                "key": CUSTOM_KEY, "proto": "openai"}
+    for dicP in _FnLoadFileProviders().get("providers", []):
+        if str(dicP.get("id") or "").strip().lower() == strId:
+            return {**dicP, "proto": "openai"}
+    return None
+
+
+def FnTestProvider(str_id: str) -> Dict[str, Any]:
+    """Connectivity test: ollama → /api/tags, openai-compatible → /models."""
+    dicP = _FnFindProviderEntry(str_id)
+    if not dicP:
+        return {"ok": False, "error": f"找不到 provider {str_id}"}
+    try:
+        if dicP["proto"] == "ollama":
+            with urllib.request.urlopen(dicP["base"] + "/api/tags", timeout=10) as oRes:
+                dicTags = json.loads(oRes.read().decode("utf-8"))
+            vModels = [m.get("name") for m in (dicTags.get("models") or []) if m.get("name")]
+            return {"ok": True, "info": f"{len(vModels)} 個模型：{"、".join(vModels[:8])}"}
+        dicHeaders = {}
+        if dicP.get("key"):
+            dicHeaders["Authorization"] = "Bearer " + dicP["key"]
+        oReq = urllib.request.Request(dicP["base"] + "/models", headers=dicHeaders, method="GET")
+        with urllib.request.urlopen(oReq, timeout=10) as oRes:
+            dicData = json.loads(oRes.read().decode("utf-8"))
+        vModels = [m.get("id") for m in (dicData.get("data") or []) if m.get("id")]
+        return {"ok": True, "info": f"{len(vModels)} 個模型：{"、".join(vModels[:8])}" or "連通（無模型列表）"}
+    except Exception as oErr:
+        return {"ok": False, "error": f"{type(oErr).__name__}: {oErr}"}
 
 SYSTEM_PROMPT = (
     "You are a code assistant inside CodeGraph Galaxy. Answer in the user's language "
@@ -116,6 +220,25 @@ def _connect_db(str_db: str) -> sqlite3.Connection:
     return o_conn
 
 
+def _FnNormProject(str_name: str) -> str:
+    """Normalize a project name: strip markdown/CJK wrappers, casefold.
+
+    Users type **RDLib**, `galaxy`, "oauth2manager" — all must resolve.
+    """
+    s = str(str_name or "").strip()
+    for ch in ("*", "_", "`", '"', "'", "「", "」", "『", "』", "《", "》",
+               "【", "】", "（", "）", "(", ")", "[", "]", ":", "：", "、", "，", ",", "。", "."):
+        s = s.replace(ch, "")
+    return s.strip().casefold()
+
+
+def vProviders_models(dicList: Dict[str, Any], str_id: str) -> List[str]:
+    for dicP in dicList.get("providers", []):
+        if dicP.get("id") == str_id:
+            return dicP.get("models") or []
+    return []
+
+
 class GalaxyChatProvider:
     """Local-LLM chat provider. fn_resolve_db(project) -> (db_path, repo_path) | None."""
     def __init__(self, fn_resolve_db: Optional[Callable[[str], Optional[Tuple[str, str]]]] = None,
@@ -128,25 +251,31 @@ class GalaxyChatProvider:
         self._str_base = (str_base_url or LLM_URL).rstrip("/")
         self._str_provider = (str_provider or LLM_PROVIDER).strip().lower() or "ollama"
 
-    def _FnResolveTarget(self, str_model: Optional[str], str_provider: Optional[str]) -> Tuple[str, str, str]:
-        """(protocol, base_url, model): protocol is 'ollama' or 'openai'."""
+    def _FnResolveTarget(self, str_model: Optional[str], str_provider: Optional[str]) -> Tuple[str, str, str, str]:
+        """(protocol, base_url, key, model). Falls back to ollama default."""
         dicDef = FnGetChatDefault()
         strProv = (str_provider or self._str_provider or dicDef["provider"] or "ollama").strip().lower()
         strMod = (str_model or self._str_model or dicDef["model"] or LLM_MODEL).strip()
-        if strProv == "custom" and CUSTOM_BASE:
-            return "openai", CUSTOM_BASE, strMod
-        return "ollama", self._str_base, strMod
+        dicP = _FnFindProviderEntry(strProv)
+        if dicP:
+            if dicP["proto"] == "openai" and strMod in ("", LLM_MODEL, self._str_model):
+                vModels = FnListProviders()
+                for dicCand in vProviders_models(vModels, dicP["id"]):
+                    strMod = dicCand
+                    break
+            return dicP["proto"], dicP["base"], dicP.get("key", ""), strMod or LLM_MODEL
+        return "ollama", self._str_base, "", strMod or LLM_MODEL
 
     # ---------------- LLM transport (stdlib, ollama-native + openai-compatible) ----------------
     def _FnPostChat(self, vMessages: List[Dict[str, Any]], str_model: Optional[str] = None,
                     str_provider: Optional[str] = None, bStream: bool = False):
-        strProto, strBase, strMod = self._FnResolveTarget(str_model, str_provider)
+        strProto, strBase, strKey, strMod = self._FnResolveTarget(str_model, str_provider)
         if strProto == "openai":
             strBody = json.dumps({"model": strMod, "messages": vMessages, "tools": TOOLS,
                                   "stream": bStream, "temperature": 0.2})
             dicHeaders = {"Content-Type": "application/json"}
-            if CUSTOM_KEY:
-                dicHeaders["Authorization"] = "Bearer " + CUSTOM_KEY
+            if strKey:
+                dicHeaders["Authorization"] = "Bearer " + strKey
             oReq = urllib.request.Request(strBase + "/chat/completions", data=strBody.encode("utf-8"),
                                           headers=dicHeaders, method="POST")
         else:
@@ -244,30 +373,63 @@ class GalaxyChatProvider:
         return {"error": f"unknown tool {strName}"}, "未知工具", []
 
     # ---------------- target repo ----------------
-    def _FnPickDb(self, dicContext: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
-        """Returns (db_path, repo_path, hint). hint set when user must pick a project."""
+    def _FnKnownIndexed(self) -> List[str]:
+        """Indexed project names (have a codegraph DB)."""
+        vNames: List[str] = []
+        if self._fn_list_projects and self._fn_resolve_db:
+            for strName in self._fn_list_projects() or []:
+                try:
+                    if self._fn_resolve_db(strName):
+                        vNames.append(strName)
+                except Exception:
+                    continue
+        return vNames
+
+    def _FnMatchProject(self, strWant: str, vCandidates: List[str]) -> Tuple[Optional[str], List[str]]:
+        """Fuzzy project match. Returns (single_match_or_None, all_close_matches)."""
+        strNorm = _FnNormProject(strWant)
+        if not strNorm:
+            return None, []
+        dicNorm = {_FnNormProject(k): k for k in vCandidates}
+        if strNorm in dicNorm:
+            return dicNorm[strNorm], [dicNorm[strNorm]]
+        vClose = [k for nk, k in dicNorm.items() if nk and (strNorm in nk or nk in strNorm)]
+        if len(vClose) == 1:
+            return vClose[0], vClose
+        return None, vClose
+
+    def _FnPickDb(self, dicContext: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+        """Returns (db_path, repo_path, hint, resolved_name). Never loops the user."""
+        vIndexed = self._FnKnownIndexed()
+        if not vIndexed:
+            return None, None, "尚無已索引的專案，請先到庫管理 init", None
         strProject = str((dicContext or {}).get("strProject") or "")
         if strProject and self._fn_resolve_db:
+            # 1. exact, 2. normalized, 3. fuzzy
             t = self._fn_resolve_db(strProject)
             if t:
-                return t[0], t[1], None
-            return None, None, f"找不到專案 {strProject}"
-        if self._fn_list_projects and self._fn_resolve_db:
-            vNames = [n for n in (self._fn_list_projects() or []) if self._fn_resolve_db(n)]
-            if len(vNames) == 1:
-                t = self._fn_resolve_db(vNames[0])
-                return t[0], t[1], None
-            if vNames:
-                return None, None, "請先指定專案（庫管理 → 選擇專案），目前有：" + "、".join(vNames[:10])
-        return None, None, "尚無已索引的專案，請先到庫管理 init"
+                return t[0], t[1], None, strProject
+            strHit, vClose = self._FnMatchProject(strProject, vIndexed)
+            if strHit and self._fn_resolve_db:
+                t = self._fn_resolve_db(strHit)
+                if t:
+                    return t[0], t[1], None, strHit
+            if vClose:
+                return None, None, "你是指「" + "」或「".join(vClose) + "」嗎？請說其中一個。", None
+            return None, None, "找不到專案「" + strProject + "」。目前已索引：" + "、".join(vIndexed[:12]), None
+        if len(vIndexed) == 1 and self._fn_resolve_db:
+            t = self._fn_resolve_db(vIndexed[0])
+            if t:
+                return t[0], t[1], None, vIndexed[0]
+        return None, None, "目前已索引：" + "、".join(vIndexed[:12]) + "。請說要用哪一個（直接打名字就行，不用加符號）。", None
 
     # ---------------- agent loop ----------------
     def _FnLoop(self, strMessage: str, dicContext: Dict[str, Any],
                 str_model: Optional[str] = None, str_provider: Optional[str] = None,
-                fnOnTrace=None) -> Tuple[str, List[Dict[str, Any]], List[str], Optional[str]]:
-        strDb, strRepo, strHint = self._FnPickDb(dicContext or {})
+                fnOnTrace=None) -> Tuple[str, List[Dict[str, Any]], List[str], Optional[str], Optional[str]]:
+        strDb, strRepo, strHint, strResolved = self._FnPickDb(dicContext or {})
         if strHint:
-            return strHint, [], [], None
+            return strHint, [], [], None, strResolved
         vMessages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         for dicMsg in (dicContext or {}).get("vHistory") or []:
             if isinstance(dicMsg, dict) and dicMsg.get("role") in ("user", "assistant"):
@@ -286,7 +448,7 @@ class GalaxyChatProvider:
                 vMessages.append({"role": "assistant", "content": strContent})
                 if not vCalls:
                     strReply = strContent.strip() or "(empty reply)"
-                    return strReply, vTrace, vHighlights, None
+                    return strReply, vTrace, vHighlights, None, strResolved
                 for dicCall in vCalls:
                     strName = str(dicCall.get("name") or "")
                     dicArgs = dicCall.get("args") or {}
@@ -303,26 +465,27 @@ class GalaxyChatProvider:
                     except Exception:
                         strResult = str(oResult)[:6000]
                     vMessages.append({"role": "tool", "content": strResult})
-            return "（達到工具呼叫上限，僅顯示已查到的部分結果）", vTrace, vHighlights, None
+            return "（達到工具呼叫上限，僅顯示已查到的部分結果）", vTrace, vHighlights, None, strResolved
         except Exception as oErr:
             strErr = f"{type(oErr).__name__}: {oErr}"
             if "URLError" in type(oErr).__name__ or "urlopen error" in strErr:
                 return ("連不上本地 LLM（{0}）。請確認 Ollama 有跑，或設 GALAXY_LLM_URL/GALAXY_LLM_MODEL。".format(self._str_base),
-                        vTrace, vHighlights, None)
-            return f"對話失敗：{strErr}", vTrace, vHighlights, None
+                        vTrace, vHighlights, None, strResolved)
+            return f"對話失敗：{strErr}", vTrace, vHighlights, None, strResolved
 
     # RDLib ChatDialog provider shape (plus optional model/provider override)
     def FnChat(self, strMessage: str, dicContext: Dict[str, Any],
                str_model: Optional[str] = None, str_provider: Optional[str] = None) -> Dict[str, Any]:
-        strReply, vTrace, vHighlights, _ = self._FnLoop(strMessage, dicContext or {}, str_model, str_provider)
-        return {"strReply": strReply, "vTrace": vTrace, "vHighlights": vHighlights[:40]}
+        strReply, vTrace, vHighlights, _, strResolved = self._FnLoop(strMessage, dicContext or {}, str_model, str_provider)
+        return {"strReply": strReply, "vTrace": vTrace, "vHighlights": vHighlights[:40],
+                "strProject": strResolved}
 
     def FnChatStream(self, strMessage: str, dicContext: Dict[str, Any],
                      str_model: Optional[str] = None,
                      str_provider: Optional[str] = None) -> Iterator[Tuple[str, Any]]:
         """Trace steps first, then stream the final answer tokens."""
         vSteps: List[Dict[str, Any]] = []
-        strReply, vTrace, vHighlights, _ = self._FnLoop(
+        strReply, vTrace, vHighlights, _, strResolved = self._FnLoop(
             strMessage, dicContext or {}, str_model, str_provider, fnOnTrace=vSteps.append)
         for dicStep in vSteps:
             yield ("trace", dicStep)
@@ -348,7 +511,8 @@ class GalaxyChatProvider:
             strFinal = strBuf.strip() or strReply
         except Exception:
             strFinal = strReply
-        yield ("done", {"strReply": strFinal, "vHighlights": vHighlights[:40]})
+        yield ("done", {"strReply": strFinal, "vHighlights": vHighlights[:40],
+                          "strProject": strResolved})
 
     @staticmethod
     def _FnStreamPiece(bLine: bytes, str_proto: str) -> Optional[str]:

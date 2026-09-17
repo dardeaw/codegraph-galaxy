@@ -7,7 +7,7 @@ from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
-from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault
+from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider
 
 def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
@@ -188,6 +188,30 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def chat_set_model():
         data = request.get_json(silent=True) or {}
         return jsonify(FnSetChatDefault(data.get("provider"), data.get("model")))
+
+    @app.route("/api/chat/providers", methods=["GET"])
+    def chat_providers():
+        return jsonify(FnListProviders())
+
+    @app.route("/api/chat/providers", methods=["POST"])
+    def chat_add_provider():
+        data = request.get_json(silent=True) or {}
+        try:
+            entry = FnAddProvider(data.get("label", ""), data.get("base", ""),
+                                  data.get("key", ""), data.get("models") or [])
+            return jsonify({"bSuccess": True, "provider": entry})
+        except ValueError as e:
+            return jsonify({"bSuccess": False, "strError": str(e)}), 400
+
+    @app.route("/api/chat/providers/<pid>", methods=["DELETE"])
+    def chat_delete_provider(pid):
+        if FnDeleteProvider(pid):
+            return jsonify({"bSuccess": True})
+        return jsonify({"bSuccess": False, "strError": "僅可刪除自建 provider"}), 400
+
+    @app.route("/api/chat/providers/<pid>/test", methods=["POST"])
+    def chat_test_provider(pid):
+        return jsonify(FnTestProvider(pid))
 
     @app.route("/api/chat", methods=["POST"])
     def chat():

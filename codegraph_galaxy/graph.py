@@ -20,11 +20,22 @@ def fetch_project_graph(
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
 
+        # codegraph >= 1.6 dropped the parent_id column; older DBs still have it.
+        node_cols = {r[1] for r in cur.execute("PRAGMA table_info(nodes)")}
+        has_parent = "parent_id" in node_cols
+
         if parent_id:
-            cur.execute("""
-                SELECT * FROM nodes 
-                WHERE id = ? OR parent_id = ? OR file_path = ?
-            """, (parent_id, parent_id, parent_id))
+            if has_parent:
+                cur.execute("""
+                    SELECT * FROM nodes
+                    WHERE id = ? OR parent_id = ? OR file_path = ?
+                """, (parent_id, parent_id, parent_id))
+            else:
+                # No hierarchy column: drill into the file's siblings instead.
+                cur.execute("""
+                    SELECT * FROM nodes
+                    WHERE id = ? OR file_path = ?
+                """, (parent_id, parent_id))
             nodes_rows = cur.fetchall()
         elif lod == "arch":
             cur.execute("SELECT * FROM nodes WHERE kind IN ('file', 'class', 'interface', 'namespace')")

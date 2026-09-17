@@ -32,6 +32,7 @@
   
 
   <div class="toolbar-right">
+    <button class="tool-btn" id="btn-chat" onclick="toggleChatPanel()" title="Ask AI about this codebase" style="color:#bc8cff; border-color:#bc8cff55;">✦ <span id="lbl-btn-chat">AI Chat</span></button>
     <button class="tool-btn" id="btn-lang" onclick="toggleLanguage()">Language: EN</button>
     <div class="stats-badge">
       <span id="stats-nodes">0 nodes</span>
@@ -49,7 +50,6 @@
       <button onclick="openPathModal()" class="mini-btn" id="btn-repo-mgr" title="Manage Repositories">⚙ Repositories</button>
       <button onclick="clearHighlight()" class="mini-btn" id="btn-clear-hl" style="font-size:10px;">Clear</button>
       <button class="mini-btn" id="btn-sync" title="Sync from CodeGraph" style="font-size:10px; color:#3fb950; border-color:#23863688; background:#23863615;">⚡ Sync from CodeGraph</button>
-      <button class="mini-btn" id="btn-chat" onclick="toggleChatPanel()" title="Ask the codebase (local LLM)" style="font-size:10px; color:#bc8cff; border-color:#bc8cff55; background:#bc8cff15;">💬 <span id="lbl-btn-chat">Ask</span></button>
     </div>
   </div>
   <div class="tree-actions-bar">
@@ -367,9 +367,13 @@
   </div>
   <div id="chat-chips" style="display:flex; flex-wrap:wrap; gap:6px; padding:8px 12px 0;"></div>
   <div id="chat-msgs" style="flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; min-height:80px;"></div>
-  <div style="display:flex; gap:6px; padding:8px 12px; border-top:1px solid #21262d;">
-    <input id="chat-input" type="text" placeholder="Ask anything about the code…" autocomplete="off" style="flex:1; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
-    <button id="chat-send" onclick="sendChatFromInput()" style="background:#238636; border:1px solid #2ea043; color:#fff; border-radius:6px; padding:7px 12px; cursor:pointer;">➤</button>
+  <div style="display:flex; gap:6px; padding:8px 12px 0; align-items:center;">
+    <span id="lbl-chat-model" style="font-size:11px; color:#8b949e;">Model</span>
+    <select id="chat-model" style="flex:1; background:#010409; border:1px solid #30363d; border-radius:6px; padding:5px 8px; color:#e6edf3; font-size:11px; max-width:100%;"></select>
+  </div>
+  <div style="display:flex; gap:6px; padding:8px 12px; border-top:1px solid #21262d; margin-top:8px;">
+    <textarea id="chat-input" rows="2" placeholder="Ask anything about the code… (Enter to send, Shift+Enter for newline)" autocomplete="off" style="flex:1; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px; resize:vertical; font-family:inherit;"></textarea>
+    <button id="chat-send" onclick="sendChatFromInput()" style="background:#238636; border:1px solid #2ea043; color:#fff; border-radius:6px; padding:7px 12px; cursor:pointer; align-self:flex-end;">➤</button>
   </div>
 </div>
 

@@ -7,7 +7,7 @@ from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
-from .chat_provider import GalaxyChatProvider
+from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault
 
 def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
@@ -179,6 +179,16 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         return GalaxyChatProvider(fn_resolve_db=fn_resolve_db, fn_list_projects=fn_list_projects)
 
+    @app.route("/api/chat/models", methods=["GET"])
+    def chat_models():
+        """opencode-like provider/model listing for the chat panel switcher."""
+        return jsonify(FnListProviders())
+
+    @app.route("/api/chat/model", methods=["POST"])
+    def chat_set_model():
+        data = request.get_json(silent=True) or {}
+        return jsonify(FnSetChatDefault(data.get("provider"), data.get("model")))
+
     @app.route("/api/chat", methods=["POST"])
     def chat():
         data = request.get_json(silent=True) or {}
@@ -186,7 +196,8 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         if not msg:
             return jsonify({"bSuccess": False, "strError": "Empty message"}), 400
         ctx = data.get("dicContext") or data.get("context") or {}
-        res = _make_chat_provider().FnChat(msg, ctx if isinstance(ctx, dict) else {})
+        res = _make_chat_provider().FnChat(msg, ctx if isinstance(ctx, dict) else {},
+                                           data.get("model"), data.get("provider"))
         return jsonify({"bSuccess": True, **res})
 
     @app.route("/api/chat/stream", methods=["POST"])
@@ -203,7 +214,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                 yield _sse_frame("error", {"strError": "Empty message"})
                 return
             try:
-                for kind, payload in provider.FnChatStream(msg, ctx):
+                for kind, payload in provider.FnChatStream(msg, ctx, data.get("model"), data.get("provider")):
                     if kind == "delta":
                         yield _sse_frame("chat_delta", {"strDelta": payload})
                     elif kind == "trace":

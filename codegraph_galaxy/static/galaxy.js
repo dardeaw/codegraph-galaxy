@@ -297,9 +297,12 @@ const I18N = {
     cg_src_bundled: 'bundled',
     cg_src_system: 'system',
     cg_sync_unavailable: 'CodeGraph CLI unavailable — sync disabled',
-    chat_ask: 'Ask',
-    chat_title: '💬 Code Assistant',
-    chat_tip: 'Ask the codebase (local LLM)',
+    chat_ask: 'AI Chat',
+    chat_title: '✦ AI Assistant',
+    chat_tip: 'Ask AI about this codebase',
+    chat_model: 'Model',
+    chat_model_loading: 'Loading models…',
+    chat_model_unavailable: 'No models available',
     chat_placeholder: 'Ask anything about the code…',
     chat_thinking: 'Thinking…',
     chat_trace_title: '🔍 Lookup trace ({n} steps)',
@@ -427,9 +430,12 @@ const I18N = {
     cg_src_bundled: '內建',
     cg_src_system: '系統',
     cg_sync_unavailable: 'CodeGraph CLI 無法使用 — 同步已停用',
-    chat_ask: '提問',
-    chat_title: '💬 程式碼助理',
-    chat_tip: '問 codebase（本地 LLM）',
+    chat_ask: 'AI 對話',
+    chat_title: '✦ AI 助理',
+    chat_tip: '問 AI 關於這個 codebase',
+    chat_model: '模型',
+    chat_model_loading: '載入模型中…',
+    chat_model_unavailable: '無可用模型',
     chat_placeholder: '問 codebase 任何問題…',
     chat_thinking: '思考中…',
     chat_trace_title: '🔍 查碼過程（{n} 步）',
@@ -2477,10 +2483,73 @@ function renderChatLabels() {
   const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
   set('lbl-btn-chat', t('chat_ask'));
   set('lbl-chat-title', t('chat_title'));
+  set('lbl-chat-model', t('chat_model'));
   const btn = document.getElementById('btn-chat');
   if (btn) btn.title = t('chat_tip');
   const inp = document.getElementById('chat-input');
   if (inp) inp.placeholder = t('chat_placeholder');
+}
+
+function chatSelectedModel() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('galaxy-chat-model') || 'null');
+    if (saved && saved.model) return saved;
+  } catch (e) { /* ignore */ }
+  const sel = document.getElementById('chat-model');
+  if (sel && sel.value) {
+    const idx = sel.value.indexOf(':');
+    return { provider: sel.value.substring(0, idx), model: sel.value.substring(idx + 1) };
+  }
+  return {};
+}
+
+function loadChatModels() {
+  const sel = document.getElementById('chat-model');
+  if (!sel) return;
+  sel.innerHTML = '';
+  const loading = document.createElement('option');
+  loading.textContent = t('chat_model_loading');
+  sel.appendChild(loading);
+  fetch('/api/chat/models')
+    .then((res) => res.json())
+    .then((data) => {
+      sel.innerHTML = '';
+      const current = (data && data.current) || {};
+      for (const p of (data && data.providers) || []) {
+        const group = document.createElement('optgroup');
+        group.label = (p.available ? '' : '⚠️ ') + (p.label || p.id);
+        for (const m of p.models || []) {
+          const opt = document.createElement('option');
+          opt.value = `${p.id}:${m}`;
+          opt.textContent = m;
+          group.appendChild(opt);
+        }
+        sel.appendChild(group);
+      }
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem('galaxy-chat-model') || 'null'); } catch (e) { /* ignore */ }
+      const want = (saved && saved.model ? `${saved.provider || 'ollama'}:${saved.model}` : null)
+        || `${current.provider || 'ollama'}:${current.model || ''}`;
+      const match = Array.from(sel.options).find((o) => o.value === want)
+        || Array.from(sel.options).find((o) => !o.disabled);
+      if (match) sel.value = match.value;
+    })
+    .catch(() => {
+      sel.innerHTML = '';
+      const opt = document.createElement('option');
+      opt.textContent = t('chat_model_unavailable');
+      sel.appendChild(opt);
+    });
+  sel.onchange = () => {
+    const idx = sel.value.indexOf(':');
+    const pick = { provider: sel.value.substring(0, idx), model: sel.value.substring(idx + 1) };
+    try { localStorage.setItem('galaxy-chat-model', JSON.stringify(pick)); } catch (e) { /* ignore */ }
+    fetch('/api/chat/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pick),
+    }).catch(() => { /* session default is best-effort */ });
+  };
 }
 
 function toggleChatPanel(force) {
@@ -2491,8 +2560,20 @@ function toggleChatPanel(force) {
   if (show) {
     renderChatLabels();
     renderChatChips();
+    loadChatModels();
     const inp = document.getElementById('chat-input');
-    if (inp) inp.focus();
+    if (inp) {
+      inp.focus();
+      if (!inp.dataset.bound) {
+        inp.dataset.bound = '1';
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChatFromInput();
+          }
+        });
+      }
+    }
     document.dispatchEvent(new CustomEvent('rd:chat-opened', { detail: {} }));
   } else {
     document.dispatchEvent(new CustomEvent('rd:chat-closed', { detail: {} }));
@@ -2563,6 +2644,7 @@ function sendChatMessage(text) {
   const payload = {
     message: text,
     context: { vHistory: chatHistory.slice(-10) },
+    ...chatSelectedModel(),
   };
   try {
     const xhr = new XMLHttpRequest();

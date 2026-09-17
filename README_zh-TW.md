@@ -69,9 +69,9 @@ Code Graph Galaxy 提供原生跨平台桌面應用與命令列運行方案：
 
 ### 方式一：下載預編譯桌面程式（推薦）
 請前往 [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases) 下載對應作業系統之安裝檔：
-1. **Windows**：執行 `Code Graph Galaxy Setup 1.0.0.exe` 安裝，或直接雙擊執行 `Code Graph Galaxy 1.0.0.exe`（便攜版）。
-2. **macOS**：打開 `Code Graph Galaxy-1.0.0.dmg` 並拖曳至應用程式目錄。
-3. **Linux**：賦予權限後直接執行：`chmod +x Code_Graph_Galaxy-1.0.0.AppImage && ./Code_Graph_Galaxy-1.0.0.AppImage`。
+1. **Windows**：執行 `Code-Graph-Galaxy-Setup-1.0.4.exe` 安裝，或直接雙擊執行 `Code-Graph-Galaxy-1.0.4.exe`（便攜版）。
+2. **macOS**：打開 `Code-Graph-Galaxy-1.0.4.dmg`（Apple Silicon 請用 `-arm64.dmg`）並拖曳至應用程式目錄。
+3. **Linux**：賦予權限後直接執行：`chmod +x Code-Graph-Galaxy-1.0.4.AppImage && ./Code-Graph-Galaxy-1.0.4.AppImage`。
 
 ---
 
@@ -83,6 +83,8 @@ cd codegraph-galaxy
 
 # 安裝依賴
 pip install -r requirements.txt
+# ……或直接裝成套件（1.0.4 起 UI 資源含在套件內）
+pip install .
 
 # 啟動服務 (預設開啟 http://localhost:5001)
 python app.py
@@ -127,13 +129,13 @@ codegraph-galaxy/
 │   ├── graph.py               # SQLite AST 拓撲查詢、LOD 過濾與代碼提取
 │   ├── service.py             # CodeGraph CLI 子進程封裝
 │   ├── server.py              # Flask 應用工廠與 RESTful API 端點
-│   └── cli.py                 # 命令列參數啟動器
-├── templates/
-│   └── index.html             # 乾淨語義化之主介面結構
-├── static/
-│   ├── galaxy.css             # 高效能深色科技主題樣式表
-│   ├── galaxy.js              # 3D 星系視覺化、檔案樹與互動邏輯
-│   └── 3d-force-graph.min.js  # Three.js 3D 力導向星系引擎
+│   ├── cli.py                 # 命令列參數啟動器
+│   ├── templates/
+│   │   └── index.html         # 乾淨語義化之主介面結構
+│   └── static/
+│       ├── galaxy.css         # 高效能深色科技主題樣式表
+│       ├── galaxy.js          # 3D 星系視覺化、檔案樹與互動邏輯
+│       └── 3d-force-graph.min.js  # Three.js 3D 力導向星系引擎
 ├── electron/
 │   ├── main.js                # 原生桌面視窗與 Python 生命週期守護
 │   └── preload.js             # 安全原生 OS IPC 溝通通道

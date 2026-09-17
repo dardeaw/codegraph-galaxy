@@ -7,11 +7,13 @@ from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex
 
-def resolve_template_path(app_root: str) -> Optional[str]:
+def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
     candidates = [
-        os.path.join(app_root, "templates", "index.html"),
-        os.path.join(app_root, "index.html"),
+        os.path.join(pkg_dir, "templates", "index.html"),
+        # Legacy source-checkout layouts (pre-1.0.4 kept assets at repo root).
+        os.path.join(os.path.dirname(pkg_dir), "templates", "index.html"),
+        os.path.join(os.path.dirname(pkg_dir), "index.html"),
         os.path.join(os.getcwd(), "templates", "index.html"),
         os.path.join(os.getcwd(), "index.html"),
     ]
@@ -29,9 +31,10 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     if initial_paths and not search_roots:
         search_roots = initial_paths
 
-    app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    template_dir = os.path.join(app_root, "templates")
-    static_dir = os.path.join(app_root, "static")
+    # UI assets ship inside the package so pip installs keep working.
+    pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    template_dir = os.path.join(pkg_dir, "templates")
+    static_dir = os.path.join(pkg_dir, "static")
 
     app = Flask(
         "codegraph_galaxy",
@@ -49,7 +52,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
     @app.route("/")
     def index():
-        path = resolve_template_path(app_root)
+        path = resolve_template_path(pkg_dir)
         if path and os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 return Response(f.read(), mimetype="text/html; charset=utf-8")

@@ -70,9 +70,9 @@ Code Graph Galaxy is available as a native desktop application and a portable CL
 
 ### Option A: Pre-built Desktop App (Recommended)
 Download the latest version for your OS from [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases):
-1. **Windows**: Run `Code Graph Galaxy Setup 1.0.2.exe` or download the single-file `Code Graph Galaxy 1.0.2.exe` (Portable).
-2. **macOS**: Open `Code Graph Galaxy-1.0.2.dmg` and drag to Applications.
-3. **Linux**: Run `chmod +x Code_Graph_Galaxy-1.0.2.AppImage && ./Code_Graph_Galaxy-1.0.2.AppImage`.
+1. **Windows**: Run `Code-Graph-Galaxy-Setup-1.0.4.exe` or download the single-file `Code-Graph-Galaxy-1.0.4.exe` (Portable).
+2. **macOS**: Open `Code-Graph-Galaxy-1.0.4.dmg` (`-arm64.dmg` on Apple Silicon) and drag to Applications.
+3. **Linux**: Run `chmod +x Code-Graph-Galaxy-1.0.4.AppImage && ./Code-Graph-Galaxy-1.0.4.AppImage`.
 
 ---
 
@@ -84,6 +84,8 @@ cd codegraph-galaxy
 
 # Install Python dependencies
 pip install -r requirements.txt
+# ...or install as a package (UI assets included since 1.0.4)
+pip install .
 
 # Launch visualizer (default port 5001)
 python app.py
@@ -129,13 +131,13 @@ codegraph-galaxy/
 │   ├── graph.py               # SQLite AST queries, LOD filtering & code extraction
 │   ├── service.py             # CodeGraph CLI subprocess manager
 │   ├── server.py              # Flask app factory & RESTful API endpoints
-│   └── cli.py                 # Command line runner
-├── templates/
-│   └── index.html             # Clean, semantic UI layout
-├── static/
-│   ├── galaxy.css             # High-performance stylesheet (dark cyberpunk theme)
-│   ├── galaxy.js              # 3D visualization, inspector & tree logic
-│   └── 3d-force-graph.min.js  # Three.js 3D force graph engine
+│   ├── cli.py                 # Command line runner
+│   ├── templates/
+│   │   └── index.html         # Clean, semantic UI layout
+│   └── static/
+│       ├── galaxy.css         # High-performance stylesheet (dark cyberpunk theme)
+│       ├── galaxy.js          # 3D visualization, inspector & tree logic
+│       └── 3d-force-graph.min.js  # Three.js 3D force graph engine
 ├── electron/
 │   ├── main.js                # Desktop window & Python lifecycle manager
 │   └── preload.js             # Secure native OS IPC bridge

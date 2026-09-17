@@ -1,4 +1,5 @@
 """Flask web server application factory and API routing."""
+import json
 import os
 from typing import Optional, List
 from flask import Flask, jsonify, request, Response
@@ -6,6 +7,7 @@ from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
+from .chat_provider import GalaxyChatProvider
 
 def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
@@ -25,6 +27,15 @@ def resolve_template_path(pkg_dir: str) -> Optional[str]:
 def _known_repo_paths(repos: dict) -> set:
     """Absolute paths of discovered repositories (allowlist for CLI actions)."""
     return {os.path.abspath(p) for p in repos.values()}
+
+def _sse_frame(str_event: str, o_data) -> str:
+    """Minimal SSE frame (same contract as RDLib ChatDialogController)."""
+    if not isinstance(o_data, str):
+        o_data = json.dumps(o_data, ensure_ascii=False)
+    v_lines = [f"event: {str_event}"]
+    for str_line in o_data.splitlines() or [""]:
+        v_lines.append(f"data: {str_line}")
+    return "\n".join(v_lines) + "\n\n"
 
 def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional[List[str]] = None) -> Flask:
     """Create and configure the Code Graph Galaxy Flask application."""
@@ -151,6 +162,62 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def codegraph_status():
         """CLI availability for the repo-manager connection indicator."""
         return jsonify(get_codegraph_status())
+
+    def _make_chat_provider() -> GalaxyChatProvider:
+        def fn_resolve_db(name: str):
+            roots = get_search_roots(search_roots)
+            repos = scan_repositories(roots)
+            p = repos.get(name or "")
+            if not p:
+                return None
+            db = get_db_path(p)
+            return (db, p) if db else None
+
+        def fn_list_projects():
+            roots = get_search_roots(search_roots)
+            return sorted(scan_repositories(roots).keys())
+
+        return GalaxyChatProvider(fn_resolve_db=fn_resolve_db, fn_list_projects=fn_list_projects)
+
+    @app.route("/api/chat", methods=["POST"])
+    def chat():
+        data = request.get_json(silent=True) or {}
+        msg = str(data.get("strMessage") or data.get("message") or "").strip()
+        if not msg:
+            return jsonify({"bSuccess": False, "strError": "Empty message"}), 400
+        ctx = data.get("dicContext") or data.get("context") or {}
+        res = _make_chat_provider().FnChat(msg, ctx if isinstance(ctx, dict) else {})
+        return jsonify({"bSuccess": True, **res})
+
+    @app.route("/api/chat/stream", methods=["POST"])
+    def chat_stream():
+        data = request.get_json(silent=True) or {}
+        msg = str(data.get("strMessage") or data.get("message") or "").strip()
+        ctx = data.get("dicContext") or data.get("context") or {}
+        if not isinstance(ctx, dict):
+            ctx = {}
+        provider = _make_chat_provider()
+
+        def gen():
+            if not msg:
+                yield _sse_frame("error", {"strError": "Empty message"})
+                return
+            try:
+                for kind, payload in provider.FnChatStream(msg, ctx):
+                    if kind == "delta":
+                        yield _sse_frame("chat_delta", {"strDelta": payload})
+                    elif kind == "trace":
+                        yield _sse_frame("chat_trace", payload if isinstance(payload, dict) else {"strSummary": str(payload)})
+                    elif kind == "done":
+                        yield _sse_frame("chat_done", payload if isinstance(payload, dict) else {"strReply": str(payload)})
+            except Exception as e:
+                yield _sse_frame("error", {"strError": str(e)})
+
+        return Response(gen(), mimetype="text/event-stream", headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        })
 
     @app.route("/api/sync", methods=["POST"])
     def sync_all():

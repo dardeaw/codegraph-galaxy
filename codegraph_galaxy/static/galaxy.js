@@ -297,6 +297,24 @@ const I18N = {
     cg_src_bundled: 'bundled',
     cg_src_system: 'system',
     cg_sync_unavailable: 'CodeGraph CLI unavailable — sync disabled',
+    chat_ask: 'Ask',
+    chat_title: '💬 Code Assistant',
+    chat_tip: 'Ask the codebase (local LLM)',
+    chat_placeholder: 'Ask anything about the code…',
+    chat_thinking: 'Thinking…',
+    chat_trace_title: '🔍 Lookup trace ({n} steps)',
+    chat_show_graph: 'Show {n} on graph',
+    chat_conn_fail: 'Connection failed. Is the backend running?',
+    chat_no_nodes: 'Those nodes are not in the current graph view.',
+    chat_highlighted: 'Highlighted {n} node(s).',
+    chat_tpl_entry: 'Find entry',
+    chat_tpl_entry_p: 'Where is the entry point of this project? List the key startup files and functions.',
+    chat_tpl_flow: 'Trace a flow',
+    chat_tpl_flow_p: 'Pick the most central request-handling flow and trace it caller to callee.',
+    chat_tpl_explain: 'Explain module',
+    chat_tpl_explain_p: 'What are the main modules in this project and what does each do?',
+    chat_tpl_impact: 'Impact check',
+    chat_tpl_impact_p: 'Which function has the most callers (highest impact if changed)?',
     
     nodes_unit: 'nodes',
     edges_unit: 'links',
@@ -409,6 +427,24 @@ const I18N = {
     cg_src_bundled: '內建',
     cg_src_system: '系統',
     cg_sync_unavailable: 'CodeGraph CLI 無法使用 — 同步已停用',
+    chat_ask: '提問',
+    chat_title: '💬 程式碼助理',
+    chat_tip: '問 codebase（本地 LLM）',
+    chat_placeholder: '問 codebase 任何問題…',
+    chat_thinking: '思考中…',
+    chat_trace_title: '🔍 查碼過程（{n} 步）',
+    chat_show_graph: '在圖上顯示 {n} 個',
+    chat_conn_fail: '連線失敗，後端有在跑嗎？',
+    chat_no_nodes: '這些節點不在目前的圖上。',
+    chat_highlighted: '已標亮 {n} 個節點。',
+    chat_tpl_entry: '找入口',
+    chat_tpl_entry_p: '這個專案的進入點在哪？列出關鍵啟動檔案與函式。',
+    chat_tpl_flow: '追流程',
+    chat_tpl_flow_p: '挑最核心的請求處理流程，從呼叫者一路追到被呼叫者。',
+    chat_tpl_explain: '解釋模組',
+    chat_tpl_explain_p: '這個專案有哪些主要模組，各負責什麼？',
+    chat_tpl_impact: '影響檢查',
+    chat_tpl_impact_p: '哪個函式被最多人呼叫（改了影響最大）？',
     
     nodes_unit: '節點',
     edges_unit: '關係鏈',
@@ -2422,6 +2458,211 @@ async function refreshCodegraphConn() {
     codegraphConn = { level: 'down' };
   }
   renderCodegraphConn();
+}
+
+// ==================== Code Assistant Chat ====================
+let chatBusy = false;
+let chatHistory = [];
+
+function chatTemplates() {
+  return [
+    { label: t('chat_tpl_entry'), prompt: t('chat_tpl_entry_p') },
+    { label: t('chat_tpl_flow'), prompt: t('chat_tpl_flow_p') },
+    { label: t('chat_tpl_explain'), prompt: t('chat_tpl_explain_p') },
+    { label: t('chat_tpl_impact'), prompt: t('chat_tpl_impact_p') },
+  ];
+}
+
+function renderChatLabels() {
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  set('lbl-btn-chat', t('chat_ask'));
+  set('lbl-chat-title', t('chat_title'));
+  const btn = document.getElementById('btn-chat');
+  if (btn) btn.title = t('chat_tip');
+  const inp = document.getElementById('chat-input');
+  if (inp) inp.placeholder = t('chat_placeholder');
+}
+
+function toggleChatPanel(force) {
+  const panel = document.getElementById('chat-panel');
+  if (!panel) return;
+  const show = typeof force === 'boolean' ? force : panel.style.display === 'none';
+  panel.style.display = show ? 'flex' : 'none';
+  if (show) {
+    renderChatLabels();
+    renderChatChips();
+    const inp = document.getElementById('chat-input');
+    if (inp) inp.focus();
+    document.dispatchEvent(new CustomEvent('rd:chat-opened', { detail: {} }));
+  } else {
+    document.dispatchEvent(new CustomEvent('rd:chat-closed', { detail: {} }));
+  }
+}
+
+function renderChatChips() {
+  const box = document.getElementById('chat-chips');
+  if (!box) return;
+  box.innerHTML = '';
+  for (const tpl of chatTemplates()) {
+    const b = document.createElement('button');
+    b.textContent = tpl.label;
+    b.style.cssText = 'border:1px solid #30363d; background:#161b22; color:#c9d1d9; border-radius:999px; padding:3px 10px; font-size:11px; cursor:pointer;';
+    b.onclick = () => sendChatMessage(tpl.prompt);
+    box.appendChild(b);
+  }
+}
+
+function sendChatFromInput() {
+  const inp = document.getElementById('chat-input');
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text || chatBusy) return;
+  inp.value = '';
+  sendChatMessage(text);
+}
+
+function chatAppendBubble(role, text) {
+  const box = document.getElementById('chat-msgs');
+  const div = document.createElement('div');
+  div.setAttribute('data-role', role);
+  div.style.cssText = role === 'user'
+    ? 'align-self:flex-end; max-width:92%; background:#1f6feb33; border:1px solid #1f6feb55; border-radius:8px; padding:6px 10px; white-space:pre-wrap; word-break:break-word;'
+    : 'align-self:flex-start; max-width:94%; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:6px 10px; white-space:pre-wrap; word-break:break-word;';
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+function chatParseSseBlock(block) {
+  let event = 'message';
+  const dataLines = [];
+  for (const raw of block.split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith(':')) continue;
+    if (line.startsWith('event:')) event = line.substring(6).trim();
+    else if (line.startsWith('data:')) dataLines.push(line.substring(5).trim());
+  }
+  if (!dataLines.length) return null;
+  let data = dataLines.join('\n');
+  try { data = JSON.parse(data); } catch (e) { /* plain text */ }
+  return { event, data };
+}
+
+function sendChatMessage(text) {
+  if (!text || chatBusy) return;
+  const panel = document.getElementById('chat-panel');
+  if (!panel || panel.style.display === 'none') toggleChatPanel(true);
+  chatBusy = true;
+  chatAppendBubble('user', text);
+  const aiDiv = chatAppendBubble('assistant', t('chat_thinking'));
+  const traceRows = document.createElement('div');
+  traceRows.style.cssText = 'align-self:flex-start; max-width:94%; font-size:11px; color:#8b949e; display:flex; flex-direction:column; gap:2px;';
+  document.getElementById('chat-msgs').appendChild(traceRows);
+
+  const payload = {
+    message: text,
+    context: { vHistory: chatHistory.slice(-10) },
+  };
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/chat/stream', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    let offset = 0, buffer = '', accumulated = '';
+    const steps = [];
+    xhr.onprogress = () => {
+      const resp = xhr.responseText || '';
+      buffer += resp.substring(offset);
+      offset = resp.length;
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop() || '';
+      for (const block of blocks) {
+        const frame = chatParseSseBlock(block);
+        if (!frame) continue;
+        if (frame.event === 'chat_delta' && frame.data && frame.data.strDelta) {
+          accumulated += frame.data.strDelta;
+          aiDiv.textContent = accumulated;
+        } else if (frame.event === 'chat_trace' && frame.data) {
+          steps.push(frame.data);
+          const row = document.createElement('div');
+          const tool = frame.data.strTool || frame.data.tool || 'tool';
+          const summary = frame.data.strSummary || frame.data.summary || '';
+          row.textContent = `🔍 ${tool} — ${summary}`;
+          traceRows.appendChild(row);
+        } else if (frame.event === 'chat_done' && frame.data) {
+          finishChatAnswer(frame.data, steps, accumulated, aiDiv, traceRows, text);
+        } else if (frame.event === 'error') {
+          aiDiv.textContent = '⚠️ ' + ((frame.data && (frame.data.strError || frame.data.message)) || 'chat failed');
+          chatBusy = false;
+        }
+      }
+      const box = document.getElementById('chat-msgs');
+      if (box) box.scrollTop = box.scrollHeight;
+    };
+    xhr.onload = () => {
+      if (xhr.status !== 200 && chatBusy) {
+        aiDiv.textContent = `⚠️ server error (${xhr.status})`;
+        chatBusy = false;
+      }
+    };
+    xhr.onerror = () => {
+      aiDiv.textContent = '⚠️ ' + t('chat_conn_fail');
+      chatBusy = false;
+    };
+    xhr.send(JSON.stringify(payload));
+  } catch (err) {
+    aiDiv.textContent = '⚠️ ' + String((err && err.message) || err);
+    chatBusy = false;
+  }
+}
+
+function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
+  const reply = (done && done.strReply) || streamed || '';
+  aiDiv.textContent = reply;
+  const highlights = (done && done.vHighlights) || [];
+  const trace = (done && done.vTrace) || steps;
+  if (trace && trace.length) {
+    const details = document.createElement('details');
+    details.style.cssText = 'align-self:flex-start; max-width:94%; font-size:11px; color:#8b949e;';
+    const summary = document.createElement('summary');
+    summary.style.cursor = 'pointer';
+    summary.textContent = t('chat_trace_title', { n: trace.length });
+    details.appendChild(summary);
+    while (traceRows.firstChild) details.appendChild(traceRows.firstChild);
+    traceRows.parentNode.replaceChild(details, traceRows);
+  } else if (traceRows.parentNode) {
+    traceRows.parentNode.removeChild(traceRows);
+  }
+  if (highlights.length) {
+    const btn = document.createElement('button');
+    btn.textContent = t('chat_show_graph', { n: highlights.length });
+    btn.style.cssText = 'align-self:flex-start; border:1px solid #bc8cff55; background:#bc8cff15; color:#bc8cff; border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;';
+    btn.onclick = () => showChatHighlights(highlights);
+    aiDiv.parentNode.insertBefore(btn, aiDiv.nextSibling);
+  }
+  chatHistory.push({ role: 'user', content: userText }, { role: 'assistant', content: reply });
+  if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
+  chatBusy = false;
+  document.dispatchEvent(new CustomEvent('rd:chat-message', {
+    detail: { strReply: reply, vHighlights: highlights, vTrace: trace },
+  }));
+}
+
+function showChatHighlights(ids) {
+  if (!ids || !ids.length || typeof Graph === 'undefined' || !Graph.graphData) return;
+  const nodes = Graph.graphData().nodes || [];
+  const found = [];
+  for (const id of ids) {
+    const n = nodes.find((x) => x && x.id === id);
+    if (n) found.push(n);
+  }
+  if (!found.length) {
+    showToast(t('chat_no_nodes'));
+    return;
+  }
+  focusOnNode(found[0]);
+  try { openDrawer(found[0]); } catch (e) { /* drawer optional */ }
+  showToast(t('chat_highlighted', { n: found.length }));
 }
 
 // Init

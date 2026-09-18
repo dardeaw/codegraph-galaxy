@@ -319,7 +319,7 @@ const I18N = {
     help_chat_rows: 'Scope follows your Explorer checks\nEvery answer shows its lookup trace\n"Show on graph" lights the nodes\nModel switcher up top, ⚙ adds endpoints',
     chat_copy: 'Copy',
     chat_copied: 'Copied.',
-    chat_locating: 'Locating node… (opening layers as needed)',
+    chat_locating: 'Locating node…',
     chat_lod_escalated: 'Switched to Standard mode to show function nodes.',
     chat_show_parent: 'Hidden in this view — showing parent {name} ({kind}).',
     chat_welcome: '👋 Ask me about this codebase, e.g.:\n• Where is the entry point, and what runs at startup?\n• Which functions does login go through?\n• If I change payment, who breaks?\n• What does the auth module do?\n\nI look the code up for real — watch the lookup trace, then hit "Show on graph".',
@@ -483,7 +483,7 @@ const I18N = {
     help_chat_rows: '範圍跟著 Explorer 勾選走\n每個回答附查碼過程\n「在圖上顯示」打光節點\n上面可換模型，⚙ 可加 endpoint',
     chat_copy: '複製',
     chat_copied: '已複製。',
-    chat_locating: '定位節點中…（自動開啟所需圖層）',
+    chat_locating: '定位節點中…',
     chat_lod_escalated: '已自動切到 Standard 模式以顯示 function 節點。',
     chat_show_parent: '目前視圖中隱藏，已定位到母節點 {name}（{kind}）。',
     chat_welcome: '👋 直接問這個 codebase，例如：\n• 進入點在哪？啟動時跑了什麼？\n• 登入會經過哪些函式？\n• 改了金流會炸到誰？\n• auth 模組在幹嘛？\n\n我會真的去查 code——看查碼過程，再按「在圖上顯示」。',
@@ -731,6 +731,9 @@ let allProjectsList = [];
 let selectedProjects = new Set();
 let currentLOD = 'arch';
 let rawData = { nodes: [], links: [], unindexed_by_project: {} };
+// Explorer tree source: full symbol list independent of the 3D LOD, so the
+// tree always shows every symbol even when arch mode hides them in 3D.
+let treeData = { nodes: [] };
 let currentData = { nodes: [], links: [] };
 let hiddenKinds = new Set();
 let hiddenEdgeKinds = new Set();
@@ -1061,6 +1064,55 @@ function countUnindexedInDir(dirObj) {
   return count;
 }
 
+function loadTreeData() {
+  const names = Array.from(selectedProjects);
+  if (!names.length) {
+    treeData = { nodes: [] };
+    buildProjectTree();
+    return;
+  }
+  fetch(`/api/graph?projects=${encodeURIComponent(names.join(','))}&lod=all`)
+    .then(res => res.json())
+    .then(data => {
+      treeData = { nodes: data.nodes || [] };
+      buildProjectTree();
+    })
+    .catch(() => { /* keep last good tree */ });
+}
+
+// Nest flat symbols under their parents via qualified_name
+// (StateMachine::__init__ under StateMachine); unknown parents stay top-level.
+function treeNestSymbols(symList) {
+  const byQual = new Map();
+  for (const s of (symList || [])) {
+    if (s && s.kind !== 'file' && s.qualified_name) {
+      const key = `${s.file_path || ''}\n${s.qualified_name}`;
+      if (!byQual.has(key)) byQual.set(key, s);
+    }
+  }
+  const childrenOf = new Map();
+  const roots = [];
+  for (const s of (symList || [])) {
+    if (!s || s.kind === 'file') continue;
+    const qn = s.qualified_name || '';
+    const sep = qn.includes('::') ? '::' : (qn.includes('.') ? '.' : null);
+    let parent = null;
+    if (sep) {
+      const parts = qn.split(sep);
+      if (parts.length > 1) {
+        parent = byQual.get(`${s.file_path || ''}\n${parts.slice(0, -1).join(sep)}`) || null;
+      }
+    }
+    if (parent && parent.id !== s.id) {
+      if (!childrenOf.has(parent.id)) childrenOf.set(parent.id, []);
+      childrenOf.get(parent.id).push(s);
+    } else {
+      roots.push(s);
+    }
+  }
+  return { roots, childrenOf };
+}
+
 function buildProjectTree() {
   const container = document.getElementById('tree-container');
   if (!container) return;
@@ -1103,8 +1155,8 @@ function buildProjectTree() {
   // Build recursive directory structure for active nodes per project
   const projRoots = {};
 
-  // Ingest indexed nodes
-  (rawData.nodes || []).forEach(n => {
+  // Ingest indexed nodes (full list: tree is independent of the 3D LOD)
+  (treeData.nodes || []).forEach(n => {
     const proj = n.project || 'Unknown';
     if (!projRoots[proj]) {
       projRoots[proj] = { name: proj, dirs: {}, files: {} };
@@ -1386,37 +1438,58 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
       selectTreeNode(fileNodeEl);
     }
 
-    // Render Symbols (Classes, Functions, Methods)
+    // Render Symbols nested under their parents (method under class),
+    // collapsible; dot + tag colors follow the 3D legend (KIND_COLORS).
     if (!isUnindexed) {
-      symList.filter(s => s.kind !== 'file').forEach(s => {
+      const nest = treeNestSymbols(symList);
+      const renderTreeSym = (s, parentEl) => {
         const symNodeEl = document.createElement('div');
         symNodeEl.className = 'tree-node';
         symNodeEl.setAttribute('data-tree-node-id', s.id);
-        
-        let icon = '🔹';
-        if (s.kind === 'class' || s.kind === 'interface') icon = '🟢';
-        else if (s.kind === 'function' || s.kind === 'method') icon = '⚡';
-
+        const color = KIND_COLORS[s.kind] || '#58a6ff';
+        const kids = nest.childrenOf.get(s.id) || [];
         symNodeEl.innerHTML = `
-          <span style="font-size:10px;">${icon}</span>
+          <span class="tree-arrow" style="${kids.length ? '' : 'visibility:hidden;'}">▸</span>
+          <span style="width:8px; height:8px; border-radius:50%; background:${color}; display:inline-block; flex:none;"></span>
           <span style="font-size:11px;">${s.name}</span>
-          <span class="node-kind-tag" style="color:${KIND_COLORS[s.kind] || '#8b949e'}">${s.kind}</span>
+          <span class="node-kind-tag" style="color:${color}; border:1px solid ${color}55; background:${color}14;">${s.kind}</span>
         `;
-
+        const childBox = document.createElement('div');
+        childBox.className = 'tree-children open';
+        for (const k of kids) renderTreeSym(k, childBox);
+        const arrow = symNodeEl.querySelector('.tree-arrow');
+        if (arrow && kids.length) {
+          arrow.onclick = (e) => {
+            e.stopPropagation();
+            childBox.classList.toggle('open');
+            arrow.classList.toggle('open');
+          };
+        }
         symNodeEl.onclick = (e) => {
           e.stopPropagation();
           selectTreeNode(symNodeEl);
-          highlightScope('node', s);
-          focusOnNode(s);
-          openDrawer(s);
+          ensureChatNodeVisible(s.id, s.project).then((n) => {
+            const target = n || s;
+            highlightScope('node', target);
+            focusOnNode(target);
+            openDrawer(target);
+            try { syncExplorerSelection(target); } catch (err) { /* ignore */ }
+            if (n && n._viaAncestor) {
+              showToast(t('chat_show_parent', { name: n.name || n.id, kind: n.kind || '' }));
+            }
+          }).catch(() => {
+            highlightScope('node', s);
+            focusOnNode(s);
+            openDrawer(s);
+          });
         };
-
         if (selectedKey === s.id) {
           selectTreeNode(symNodeEl);
         }
-
-        fileChildrenEl.appendChild(symNodeEl);
-      });
+        parentEl.appendChild(symNodeEl);
+        if (kids.length) parentEl.appendChild(childBox);
+      };
+      for (const s of nest.roots) renderTreeSym(s, fileChildrenEl);
     }
 
     parentEl.appendChild(fileNodeEl);
@@ -2317,7 +2390,7 @@ function loadRootGraph(isSilent = false) {
   if (selectedProjects.size === 0) {
     rawData = { nodes: [], links: [], unindexed_by_project: {} };
     applyFilter(false);
-    buildProjectTree();
+    loadTreeData();
     return;
   }
 
@@ -2334,6 +2407,7 @@ function loadRootGraph(isSilent = false) {
       applyFilter(!isSilent && !window._graphInitialized);
       window._graphInitialized = true;
       buildProjectTree();
+      loadTreeData();
 
       // Quietly update inspector code if drawer is currently open
       if (activeNode && activeNode.project && activeNode.file_path) {

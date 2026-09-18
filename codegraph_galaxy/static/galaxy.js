@@ -799,6 +799,88 @@ function init3DGraph() {
   window.addEventListener('resize', () => {
     if (Graph) Graph.width(window.innerWidth).height(window.innerHeight);
   });
+  ensureFileLabelLayer();
+}
+
+// ==========================================
+// File sphere labels (HTML overlay, zero new deps)
+// ==========================================
+let fileLabelLayer = null;
+const fileLabelDivs = new Map();
+
+function fileLabelName(n) {
+  const fp = n.file_path || n.name || '';
+  return fp.split('/').pop().split('\\').pop();
+}
+
+function ensureFileLabelLayer() {
+  if (fileLabelLayer) return fileLabelLayer;
+  fileLabelLayer = document.createElement('div');
+  fileLabelLayer.id = 'file-labels';
+  fileLabelLayer.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:5;';
+  document.body.appendChild(fileLabelLayer);
+  const tick = () => {
+    try { updateFileLabels(); } catch (e) { /* never break the render loop */ }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  return fileLabelLayer;
+}
+
+function updateFileLabels() {
+  if (!Graph || !Graph.graphData || typeof Graph.graph2ScreenCoords !== 'function' || !fileLabelLayer) return;
+  const nodes = Graph.graphData().nodes || [];
+  let camPos = null, lookDir = null;
+  try {
+    const cam = Graph.camera();
+    const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+    if (cam && cam.position && ctrl && ctrl.target) {
+      camPos = cam.position;
+      lookDir = {
+        x: ctrl.target.x - camPos.x,
+        y: ctrl.target.y - camPos.y,
+        z: ctrl.target.z - camPos.z,
+      };
+    }
+  } catch (e) { /* ignore */ }
+  const seen = new Set();
+  const hlActive = (typeof highlightNodes !== 'undefined' && highlightNodes.size > 0);
+  for (const n of nodes) {
+    if (!n || n.kind !== 'file' || n.x === undefined) continue;
+    const base = fileLabelName(n);
+    if (!base || base === '__init__.py') continue;
+    seen.add(n.id);
+    let div = fileLabelDivs.get(n.id);
+    if (!div) {
+      div = document.createElement('div');
+      div.textContent = base;
+      div.style.cssText = `position:absolute;transform:translate(-50%,-160%);font-size:11px;color:${(typeof KIND_COLORS !== 'undefined' && KIND_COLORS.file) || '#f0883e'};text-shadow:0 1px 3px #000,0 0 8px #000;white-space:nowrap;pointer-events:none;`;
+      fileLabelLayer.appendChild(div);
+      fileLabelDivs.set(n.id, div);
+    }
+    // behind camera → hide (dot((N-C),(T-C)) < 0)
+    let behind = false;
+    if (camPos && lookDir) {
+      const dot = (n.x - camPos.x) * lookDir.x + (n.y - camPos.y) * lookDir.y + (n.z - camPos.z) * lookDir.z;
+      behind = dot < 0;
+    }
+    let sp = null;
+    try { sp = Graph.graph2ScreenCoords(n.x, n.y, n.z); } catch (e) { /* ignore */ }
+    if (behind || !sp || sp.x < -80 || sp.y < -40 || sp.x > window.innerWidth + 80 || sp.y > window.innerHeight + 40) {
+      div.style.display = 'none';
+      continue;
+    }
+    div.style.display = '';
+    div.style.left = `${sp.x}px`;
+    div.style.top = `${sp.y}px`;
+    div.style.opacity = (hlActive && !highlightNodes.has(n.id)) ? '0.15' : '0.95';
+  }
+  for (const [id, div] of fileLabelDivs) {
+    if (!seen.has(id)) {
+      try { div.remove(); } catch (e) { /* ignore */ }
+      fileLabelDivs.delete(id);
+    }
+  }
 }
 
 // ==========================================

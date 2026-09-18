@@ -2797,7 +2797,11 @@ function sendChatMessage(text) {
   }
   const payload = {
     message: text,
-    context: { vHistory: chatHistory.slice(-10), strProject: chatCurrentProject() },
+    context: {
+      vHistory: chatHistory.slice(-10),
+      strProject: chatCurrentProject(),
+      vProjects: Array.from(selectedProjects || []),
+    },
     ...chatSelectedModel(),
   };
   try {

@@ -178,7 +178,7 @@ SYSTEM_PROMPT = (
     "You are a code assistant inside CodeGraph Galaxy. Answer in the user's language "
     "(Traditional Chinese if the user writes Traditional Chinese). "
     "Use the provided tools to look up the codebase — never invent symbols, files or line numbers. "
-    "galaxy_search_symbols searches ALL indexed projects unless a project is given; "
+    "galaxy_search_symbols searches the Explorer-selected scope (or all indexed projects); "
     "its hits carry project names — pass that project into neighbors/code/blast_radius. "
     "Keep the final answer concise and reference node ids in backticks like `auth:login`."
 )
@@ -360,15 +360,16 @@ class GalaxyChatProvider:
         finally:
             oConn.close()
 
-    def _FnResolveSingle(self, str_want: str = "", dic_ctx: Optional[Dict[str, Any]] = None) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
+    def _FnResolveSingle(self, str_want: str = "", dic_ctx: Optional[Dict[str, Any]] = None,
+                         v_scope: Optional[List[str]] = None) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
         """Resolve one DB for single-project tools.
 
-        Priority: explicit arg → context project → single indexed repo.
+        Priority: explicit arg → context project → single project in scope.
         Returns (db_path, repo_path, resolved_name, err_hint).
         """
-        vIndexed = self._FnKnownIndexed()
+        vIndexed = v_scope if v_scope else self._FnKnownIndexed()
         if not vIndexed:
-            return None, None, None, "尚無已索引的專案，請先到庫管理 init"
+            return None, None, None, "範圍內無已索引的專案"
         for strCand in (str_want or "", str((dic_ctx or {}).get("strProject") or "")):
             if not strCand or not self._fn_resolve_db:
                 continue
@@ -389,10 +390,11 @@ class GalaxyChatProvider:
                 return t[0], t[1], vIndexed[0], ""
         return None, None, None, "需指定專案（目前已索引：" + "、".join(vIndexed[:12]) + "）"
 
-    def _FnSearchAll(self, strKeyword: str, nLimit: int, str_only_project: str = "") -> Tuple[List[Dict[str, Any]], str]:
-        """Fan-out keyword search across indexed DBs. Returns (hits, summary)."""
+    def _FnSearchAll(self, strKeyword: str, nLimit: int, str_only_project: str = "",
+                       v_scope: Optional[List[str]] = None) -> Tuple[List[Dict[str, Any]], str]:
+        """Fan-out keyword search across scoped DBs. Returns (hits, summary)."""
         nLimit = max(1, min(MAX_SEARCH, int(nLimit or 8)))
-        vIndexed = self._FnKnownIndexed()
+        vIndexed = v_scope if v_scope else self._FnKnownIndexed()
         if str_only_project and self._fn_resolve_db:
             t = self._fn_resolve_db(str_only_project)
             if t:
@@ -423,24 +425,26 @@ class GalaxyChatProvider:
 
     def _FnRunTool(self, strName: str, dicArgs: Dict[str, Any], dicCtx: Dict[str, Any]) -> Tuple[Any, str, List[str], Optional[str]]:
         """Returns (result_for_llm, trace_summary, highlight_ids, resolved_project)."""
+        vScope = self._FnScopeProjects(dicCtx)
         if strName == "galaxy_search_symbols":
             vHits, strErr = self._FnSearchAll(str(dicArgs.get("keyword", "")),
                                               int(dicArgs.get("limit", 8) or 8),
-                                              str(dicArgs.get("project", "") or ""))
+                                              str(dicArgs.get("project", "") or ""),
+                                              vScope)
             if strErr:
                 return {"error": strErr}, strErr, [], None
             vIds = [h["id"] for h in vHits if h.get("id")]
             strNames = ", ".join(f"`{h['id']}`@{h.get('project', '?')}" for h in vHits[:8]) or "none"
             return vHits, f"命中 {len(vHits)} 個：{strNames}", vIds, None
         if strName in ("galaxy_get_neighbors", "galaxy_blast_radius"):
-            strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx)
+            strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx, vScope)
             if strErr:
                 return {"error": strErr}, strErr, [], None
             dicRes = self._FnHops(strDb, str(dicArgs.get("node_id", "")), int(dicArgs.get("depth", 1) or 1))
             vIds = [n["id"] for n in dicRes["nodes"] if n.get("id")]
             return dicRes, f"[{strProj}] 展開 {dicRes['count']} 個相鄰節點", vIds, strProj
         if strName == "galaxy_get_code":
-            strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx)
+            strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx, vScope)
             if strErr:
                 return {"error": strErr}, strErr, [], None
             nStart = max(1, int(dicArgs.get("start_line", 1) or 1))
@@ -461,6 +465,22 @@ class GalaxyChatProvider:
                 except Exception:
                     continue
         return vNames
+
+    def _FnScopeProjects(self, dicCtx: Dict[str, Any]) -> List[str]:
+        """Explorer-selected scope: intersect requested names with indexed ones.
+
+        Empty/unknown selection falls back to all indexed (never blocks).
+        """
+        vIndexed = self._FnKnownIndexed()
+        vWant = (dicCtx or {}).get("vProjects") or []
+        if not isinstance(vWant, list) or not vWant:
+            return vIndexed
+        vScoped: List[str] = []
+        for strWant in vWant:
+            strHit, _ = self._FnMatchProject(str(strWant or ""), vIndexed)
+            if strHit and strHit not in vScoped:
+                vScoped.append(strHit)
+        return vScoped or vIndexed
 
     def _FnMatchProject(self, strWant: str, vCandidates: List[str]) -> Tuple[Optional[str], List[str]]:
         """Fuzzy project match. Returns (single_match_or_None, all_close_matches)."""

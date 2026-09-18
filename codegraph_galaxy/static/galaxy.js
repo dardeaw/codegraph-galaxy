@@ -1556,7 +1556,14 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
       } else {
         highlightScope('file', { project: projName, file_path: cleanFilePath, node: fileNode, symbols: symList });
         openDrawer(fileNode);
-        if (fileNode.x !== undefined) focusOnNode(fileNode);
+        // Tree objects carry no layout coords — focus the live graph node.
+        const g = (typeof findGraphNode === 'function') ? findGraphNode(fileNode.id) : null;
+        if (g) {
+          if (!g._visibleAncestors) g._visibleAncestors = [];
+          focusOnNode(g);
+        } else if (fileNode.x !== undefined) {
+          focusOnNode(fileNode);
+        }
       }
     };
 

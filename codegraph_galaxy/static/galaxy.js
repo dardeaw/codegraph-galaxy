@@ -3079,7 +3079,7 @@ function chatAppendBubble(role, text) {
   div.appendChild(span);
   div._span = span;
   const copyBtn = document.createElement('button');
-  copyBtn.textContent = '📋';
+  copyBtn.innerHTML = chatCopySvg(false);
   copyBtn.title = t('chat_copy');
   copyBtn.style.cssText = 'float:right; background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:var(--cfs-sm); padding:0 0 0 6px;';
   copyBtn.onclick = (e) => {
@@ -3092,13 +3092,20 @@ function chatAppendBubble(role, text) {
   return div;
 }
 
+function chatCopySvg(done) {
+  if (done) {
+    return '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#3fb950" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 4.5"/></svg>';
+  }
+  return '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 5.5v-2a2 2 0 0 0-2-2h-5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h2"/></svg>';
+}
+
 function copyChatText(text, btn) {
   const done = () => {
     showToast(t('chat_copied'));
     if (btn) {
-      const old = btn.textContent;
-      btn.textContent = '✅';
-      setTimeout(() => { btn.textContent = old; }, 1200);
+      const old = btn.innerHTML;
+      btn.innerHTML = chatCopySvg(true);
+      setTimeout(() => { btn.innerHTML = old; }, 1200);
     }
   };
   try {
@@ -3328,7 +3335,7 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   aiDiv.dataset.raw = reply;
   aiDiv.innerHTML = chatRenderMarkdown(reply);
   const copyBtn = document.createElement('button');
-  copyBtn.textContent = '📋';
+  copyBtn.innerHTML = chatCopySvg(false);
   copyBtn.title = t('chat_copy');
   copyBtn.style.cssText = 'float:right; background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:var(--cfs-sm); padding:0 0 0 6px;';
   copyBtn.onclick = (e) => {

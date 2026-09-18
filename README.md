@@ -8,7 +8,9 @@
 [English](README.md) | [繁體中文](README_zh-TW.md)
 
 ---
-<img width="1408" height="866" alt="image" src="https://github.com/user-attachments/assets/48f97268-3f3b-4b94-81bc-6d6f8097eeac" />
+<img width="1132" height="751" alt="image" src="https://github.com/user-attachments/assets/f50e3a64-dc4a-4086-b97f-196dc74555e1" />
+
+
 
 ##  What is Code Graph Galaxy?
 

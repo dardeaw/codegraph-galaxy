@@ -2670,8 +2670,6 @@ function initChatPanelDrag() {
   document.addEventListener('mouseup', () => {
     if (panel.style.display !== 'none') saveChatPanelGeom();
   });
-  const grip = document.getElementById('chat-resize');
-  if (grip) grip.style.display = 'none';
   initChatPanelEdges(panel);
 }
 
@@ -2768,7 +2766,7 @@ function renderProvPresets() {
     const b = document.createElement('button');
     b.textContent = p.label;
     b.dataset.typeId = p.id;
-    b.style.cssText = 'border:1px solid #30363d; background:#161b22; color:#c9d1d9; border-radius:999px; padding:4px 12px; font-size:11px; cursor:pointer;';
+    b.style.cssText = 'border:1px solid #30363d; background:#161b22; color:#c9d1d9; border-radius:999px; padding:4px 12px; font-size:var(--cfs-sm); cursor:pointer;';
     b.onclick = () => selectProvType(p.id);
     box.appendChild(b);
   }
@@ -2820,14 +2818,14 @@ function renderProvModelList(models) {
   box.innerHTML = '';
   if (!provFetchedModels.length) {
     const hint = document.createElement('div');
-    hint.style.cssText = 'color:#8b949e; font-size:11px;';
+    hint.style.cssText = 'color:#8b949e; font-size:var(--cfs-sm);';
     hint.textContent = t('prov_models_empty');
     box.appendChild(hint);
     return;
   }
   provFetchedModels.forEach((m, idx) => {
     const lab = document.createElement('label');
-    lab.style.cssText = 'display:flex; gap:8px; align-items:center; border:1px solid #21262d; border-radius:6px; padding:6px 10px; cursor:pointer; font-size:12px;';
+    lab.style.cssText = 'display:flex; gap:8px; align-items:center; border:1px solid #21262d; border-radius:6px; padding:6px 10px; cursor:pointer; font-size:var(--cfs);';
     const radio = document.createElement('input');
     radio.type = 'radio';
     radio.name = 'prov-model-pick';
@@ -2906,7 +2904,7 @@ function refreshProviderList() {
         row.appendChild(label);
         const testBtn = document.createElement('button');
         testBtn.textContent = t('chat_prov_test');
-        testBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#c9d1d9; cursor:pointer; padding:2px 8px; font-size:11px;';
+        testBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#c9d1d9; cursor:pointer; padding:2px 8px; font-size:var(--cfs-sm);';
         testBtn.onclick = () => {
           if (msg) msg.textContent = '…';
           fetch(`/api/chat/providers/${encodeURIComponent(p.id)}/test`, { method: 'POST' })
@@ -2918,7 +2916,7 @@ function refreshProviderList() {
         if (p.source === 'file') {
           const delBtn = document.createElement('button');
           delBtn.textContent = '✕';
-          delBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#f85149; cursor:pointer; padding:2px 8px; font-size:11px;';
+          delBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#f85149; cursor:pointer; padding:2px 8px; font-size:var(--cfs-sm);';
           delBtn.onclick = () => {
             fetch(`/api/chat/providers/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
               .then(() => { refreshProviderList(); loadChatModels(); })
@@ -3037,7 +3035,7 @@ function renderChatChips() {
   for (const tpl of chatTemplates()) {
     const b = document.createElement('button');
     b.textContent = tpl.label;
-    b.style.cssText = 'border:1px solid #30363d; background:#161b22; color:#c9d1d9; border-radius:999px; padding:3px 10px; font-size:11px; cursor:pointer;';
+    b.style.cssText = 'border:1px solid #30363d; background:#161b22; color:#c9d1d9; border-radius:999px; padding:4px 12px; font-size:var(--cfs-sm); cursor:pointer;';
     b.onclick = () => sendChatMessage(tpl.prompt);
     box.appendChild(b);
   }
@@ -3088,7 +3086,7 @@ function sendChatMessage(text) {
   chatAppendBubble('user', text);
   const aiDiv = chatAppendBubble('assistant', t('chat_thinking'));
   const traceRows = document.createElement('div');
-  traceRows.style.cssText = 'align-self:flex-start; max-width:94%; font-size:11px; color:#8b949e; display:flex; flex-direction:column; gap:2px;';
+  traceRows.style.cssText = 'align-self:flex-start; max-width:94%; font-size:var(--cfs-sm); color:#8b949e; display:flex; flex-direction:column; gap:2px;';
   document.getElementById('chat-msgs').appendChild(traceRows);
 
   const payload = {
@@ -3247,7 +3245,7 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   const trace = (done && done.vTrace) || steps;
   if (trace && trace.length) {
     const details = document.createElement('details');
-    details.style.cssText = 'align-self:flex-start; max-width:94%; font-size:11px; color:#8b949e;';
+    details.style.cssText = 'align-self:flex-start; max-width:94%; font-size:var(--cfs-sm); color:#8b949e;';
     const summary = document.createElement('summary');
     summary.style.cursor = 'pointer';
     summary.textContent = t('chat_trace_title', { n: trace.length });
@@ -3260,7 +3258,7 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   if (highlights.length) {
     const btn = document.createElement('button');
     btn.textContent = t('chat_show_graph', { n: highlights.length });
-    btn.style.cssText = 'align-self:flex-start; border:1px solid #bc8cff55; background:#bc8cff15; color:#bc8cff; border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;';
+    btn.style.cssText = 'align-self:flex-start; border:1px solid #bc8cff55; background:#bc8cff15; color:#bc8cff; border-radius:6px; padding:4px 10px; font-size:var(--cfs-sm); cursor:pointer;';
     btn.onclick = () => showChatHighlights(highlights);
     aiDiv.parentNode.insertBefore(btn, aiDiv.nextSibling);
   }

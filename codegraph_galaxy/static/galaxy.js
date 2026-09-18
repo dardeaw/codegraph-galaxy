@@ -978,7 +978,10 @@ function ensureFileLabelLayer() {
   fileLabelLayer.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:5;';
   document.body.appendChild(fileLabelLayer);
   const tick = () => {
-    try { updateFileLabels(); } catch (e) { /* never break the render loop */ }
+    try {
+      updateFileLabels();
+      updateFocusLabel();
+    } catch (e) { /* never break the render loop */ }
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -1040,6 +1043,56 @@ function updateFileLabels() {
       fileLabelDivs.delete(id);
     }
   }
+}
+
+// Focus label ("牌位"): the focused node always gets a label, even when its
+// kind has no file-labels (class/function/...) or its layer is hidden —
+// walk-up focus lands on the ancestor, and the ancestor's label shows.
+let focusLabelNodeId = null;
+let focusLabelDiv = null;
+
+function showFocusLabelNode(n) {
+  focusLabelNodeId = (n && n.id) || null;
+}
+
+function updateFocusLabel() {
+  if (!fileLabelLayer) return;
+  if (!focusLabelDiv) {
+    focusLabelDiv = document.createElement('div');
+    focusLabelDiv.id = 'focus-label';
+    focusLabelDiv.style.cssText = 'position:absolute;transform:translate(-50%,70%);pointer-events:none;white-space:nowrap;';
+    fileLabelLayer.appendChild(focusLabelDiv);
+  }
+  const n = (focusLabelNodeId && typeof findGraphNode === 'function') ? findGraphNode(focusLabelNodeId) : null;
+  if (!n || n.x === undefined || typeof Graph === 'undefined' || !Graph || typeof Graph.graph2ScreenCoords !== 'function') {
+    focusLabelDiv.style.display = 'none';
+    return;
+  }
+  let behind = false;
+  try {
+    const cam = Graph.camera();
+    const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+    if (cam && cam.position && ctrl && ctrl.target) {
+      const dx = ctrl.target.x - cam.position.x, dy = ctrl.target.y - cam.position.y, dz = ctrl.target.z - cam.position.z;
+      behind = ((n.x - cam.position.x) * dx + (n.y - cam.position.y) * dy + (n.z - cam.position.z) * dz) < 0;
+    }
+  } catch (e) { /* ignore */ }
+  let sp = null;
+  try { sp = Graph.graph2ScreenCoords(n.x, n.y, n.z); } catch (e) { /* ignore */ }
+  const vx = sp ? sp.x + graphOriginX : -9999;
+  if (behind || !sp || vx < graphOriginX - 80 || sp.y < 8 || vx > graphVisibleRight + 40 || sp.y > window.innerHeight + 40) {
+    focusLabelDiv.style.display = 'none';
+    return;
+  }
+  const color = (typeof KIND_COLORS !== 'undefined' && KIND_COLORS[n.kind]) || '#58a6ff';
+  focusLabelDiv.style.display = '';
+  focusLabelDiv.style.left = `${vx}px`;
+  focusLabelDiv.style.top = `${sp.y}px`;
+  focusLabelDiv.innerHTML = '';
+  const pill = document.createElement('span');
+  pill.textContent = `${n.name || n.id} · ${n.kind || ''}`;
+  pill.style.cssText = `background:rgba(13,17,23,0.92);border:1px solid ${color};color:${color};border-radius:999px;padding:2px 10px;font-size:12px;`;
+  focusLabelDiv.appendChild(pill);
 }
 
 // ==========================================
@@ -1633,6 +1686,7 @@ function clearHighlight() {
   highlightNodes.clear();
   highlightLinks.clear();
   selectTreeNode(null);
+  showFocusLabelNode(null);
 
   if (Graph) {
     Graph.nodeColor(Graph.nodeColor())
@@ -1973,6 +2027,7 @@ function focusOnNode(node) {
     { x: node.x || 0, y: node.y || 0, z: node.z || 0 },
     1200
   );
+  showFocusLabelNode(node);
 }
 
 // Open Inspector for Nodes/Files

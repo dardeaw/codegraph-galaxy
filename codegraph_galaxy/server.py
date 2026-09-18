@@ -1,4 +1,5 @@
 """Flask web server application factory and API routing."""
+import json
 import os
 from typing import Optional, List
 from flask import Flask, jsonify, request, Response
@@ -6,6 +7,7 @@ from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
+from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
 def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
@@ -25,6 +27,15 @@ def resolve_template_path(pkg_dir: str) -> Optional[str]:
 def _known_repo_paths(repos: dict) -> set:
     """Absolute paths of discovered repositories (allowlist for CLI actions)."""
     return {os.path.abspath(p) for p in repos.values()}
+
+def _sse_frame(str_event: str, o_data) -> str:
+    """Minimal SSE frame (same contract as RDLib ChatDialogController)."""
+    if not isinstance(o_data, str):
+        o_data = json.dumps(o_data, ensure_ascii=False)
+    v_lines = [f"event: {str_event}"]
+    for str_line in o_data.splitlines() or [""]:
+        v_lines.append(f"data: {str_line}")
+    return "\n".join(v_lines) + "\n\n"
 
 def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional[List[str]] = None) -> Flask:
     """Create and configure the Code Graph Galaxy Flask application."""
@@ -151,6 +162,117 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def codegraph_status():
         """CLI availability for the repo-manager connection indicator."""
         return jsonify(get_codegraph_status())
+
+    def _repo_helpers():
+        def fn_resolve_db(name: str):
+            roots = get_search_roots(search_roots)
+            repos = scan_repositories(roots)
+            p = repos.get(name or "")
+            if not p:
+                return None
+            db = get_db_path(p)
+            return (db, p) if db else None
+
+        def fn_list_projects():
+            roots = get_search_roots(search_roots)
+            return sorted(scan_repositories(roots).keys())
+
+        return fn_resolve_db, fn_list_projects
+
+    def _make_chat_provider() -> GalaxyChatProvider:
+        fn_resolve_db, fn_list_projects = _repo_helpers()
+        return GalaxyChatProvider(fn_resolve_db=fn_resolve_db, fn_list_projects=fn_list_projects)
+
+    @app.route("/api/chat/node", methods=["GET"])
+    def chat_find_node():
+        fn_resolve_db, fn_list_projects = _repo_helpers()
+        return jsonify(FnFindNode(request.args.get("id", ""), request.args.get("project", ""),
+                                  fn_resolve_db, fn_list_projects))
+
+    @app.route("/api/chat/models", methods=["GET"])
+    def chat_models():
+        """opencode-like provider/model listing for the chat panel switcher."""
+        return jsonify(FnListProviders())
+
+    @app.route("/api/chat/model", methods=["POST"])
+    def chat_set_model():
+        data = request.get_json(silent=True) or {}
+        return jsonify(FnSetChatDefault(data.get("provider"), data.get("model")))
+
+    @app.route("/api/chat/providers", methods=["GET"])
+    def chat_providers():
+        return jsonify(FnListProviders())
+
+    @app.route("/api/chat/providers", methods=["POST"])
+    def chat_add_provider():
+        data = request.get_json(silent=True) or {}
+        try:
+            entry = FnAddProvider(data.get("label", ""), data.get("base", ""),
+                                  data.get("key", ""), data.get("models") or [],
+                                  data.get("strLang", ""))
+            return jsonify({"bSuccess": True, "provider": entry})
+        except ValueError as e:
+            return jsonify({"bSuccess": False, "strError": str(e)}), 400
+
+    @app.route("/api/chat/providers/<pid>", methods=["DELETE"])
+    def chat_delete_provider(pid):
+        if FnDeleteProvider(pid):
+            return jsonify({"bSuccess": True})
+        strLang = (request.args.get("strLang") or "")
+        bZh = strLang.strip().lower().replace("_", "-").startswith("zh")
+        return jsonify({"bSuccess": False,
+                        "strError": "僅可刪除自建 provider" if bZh else "Only user-added providers can be deleted"}), 400
+
+    @app.route("/api/chat/providers/<pid>/test", methods=["POST"])
+    def chat_test_provider(pid):
+        data = request.get_json(silent=True) or {}
+        return jsonify(FnTestProvider(pid, data.get("strLang", "")))
+
+    @app.route("/api/chat/providers/models", methods=["POST"])
+    def chat_remote_models():
+        data = request.get_json(silent=True) or {}
+        return jsonify(FnListRemoteModels(data.get("base", ""), data.get("key", "")))
+
+    @app.route("/api/chat", methods=["POST"])
+    def chat():
+        data = request.get_json(silent=True) or {}
+        msg = str(data.get("strMessage") or data.get("message") or "").strip()
+        if not msg:
+            return jsonify({"bSuccess": False, "strError": "Empty message"}), 400
+        ctx = data.get("dicContext") or data.get("context") or {}
+        res = _make_chat_provider().FnChat(msg, ctx if isinstance(ctx, dict) else {},
+                                           data.get("model"), data.get("provider"))
+        return jsonify({"bSuccess": True, **res})
+
+    @app.route("/api/chat/stream", methods=["POST"])
+    def chat_stream():
+        data = request.get_json(silent=True) or {}
+        msg = str(data.get("strMessage") or data.get("message") or "").strip()
+        ctx = data.get("dicContext") or data.get("context") or {}
+        if not isinstance(ctx, dict):
+            ctx = {}
+        provider = _make_chat_provider()
+
+        def gen():
+            if not msg:
+                yield _sse_frame("error", {"strError": "Empty message"})
+                return
+            try:
+                for kind, payload in provider.FnChatStream(msg, ctx, data.get("model"), data.get("provider")):
+                    if kind == "delta":
+                        yield _sse_frame("chat_delta", {"strDelta": payload})
+                    elif kind == "trace":
+                        yield _sse_frame("chat_trace", payload if isinstance(payload, dict) else {"strSummary": str(payload)})
+                    elif kind == "done":
+                        yield _sse_frame("chat_done", payload if isinstance(payload, dict) else {"strReply": str(payload)})
+            except Exception as e:
+                yield _sse_frame("error", {"strError": str(e)})
+
+        return Response(gen(), mimetype="text/event-stream", headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        })
 
     @app.route("/api/sync", methods=["POST"])
     def sync_all():

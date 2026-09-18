@@ -1,4 +1,4 @@
-# 🌌 Code Graph Galaxy
+# Code Graph Galaxy
 
 > **A high-performance 3D code intelligence visualizer and architecture exploration suite for multi-project codebases.**  
 > Effortlessly transform complex software structures and dependency networks into an interactive, intuitive celestial universe.
@@ -40,6 +40,9 @@ Adapt visual density on the fly without overwhelming the screen:
 
 ###  4. Multi-Project Repository Explorer & Tree Navigation
 - **Hierarchical Project Tree**: Explore folder structures with live folder collapse/expand, directory-level unindexed counters, and direct file focus.
+- **Full Symbol List, Independent of 3D LOD**: The tree always lists every symbol (functions, methods, imports, variables) even when Architecture mode hides them in 3D.
+- **Nested Symbols**: Methods fold under their parent class via qualified names, with per-kind colors matching the 3D legend.
+- **Smart Locate**: Clicking a symbol hidden in the current 3D view centers on its nearest visible ancestor instead of flying to empty coordinates — Inspector and tree selection stay on your original node.
 - **Instant AST Jump**: Click any file in the explorer tree to immediately locate and orbit-focus its corresponding 3D node.
 - **Visual Status Badges**: Clear visual tags distinguishing between indexed nodes and unindexed disk files.
 
@@ -48,11 +51,20 @@ Adapt visual density on the fly without overwhelming the screen:
 - **Built-in Code Preview**: Read live syntax-highlighted source code snippets without leaving the visualizer.
 - **1-Click IDE Launch**: Open the selected file directly at the exact line in **VS Code** or **Antigravity IDE**.
 
-### 🛠️ 6. Repository & Exclude Management
+### 6. Repository & Exclude Management
 - **Multi-Root Auto Discovery**: Automatically scans common workspace directories (`Projects`, `Workspace`, `PythonCode`, `Repos`, etc.).
 - **Custom Directory Ingestion**: Add arbitrary local directories via native OS folder dialogs or manual input.
 - **Visual Exclusion Rules**: Exclude build artifacts, test datasets, or legacy folders directly from the UI with persistent JSON storage.
 - **Project Lifecycle Control**: Initialize (`codegraph init`), uninitialize (`codegraph uninit`), or trigger full re-indexing (`codegraph index`) per project with live status feedback.
+
+### 7. AI Code Chat (Local LLM Agent)
+- **Ask the Codebase**: Toolbar **AI Chat** button opens a Copilot-style panel; the local LLM looks up the graph with tools (search / neighbors / code / blast-radius) instead of guessing.
+- **Lookup Trace**: Every answer shows its step-by-step trace with clickable, kind-colored node chips; **Show on graph** lights the nodes in 3D.
+- **Ancestor Walk-Up**: Hidden nodes resolve to their nearest visible ancestor — layers and LOD are never auto-changed.
+- **Explorer Scope**: Search range follows your Explorer checks; no manual project picking, fuzzy-matched and remembered across turns.
+- **Model & Provider Management**: Switch local Ollama models from the dropdown, or add OpenAI-compatible endpoints (OpenAI / DeepSeek / Gemini / Groq / xAI / llama.cpp / custom) via the provider settings dialog with presets and auto-fill. Keys stay on your machine (`~/.codegraph-galaxy/llm.json`).
+- **Chat Comfort**: Markdown answers with tables and code blocks, copy buttons, per-language system prompts (en-US / zh-TW), `Enter` to send / `Shift+Enter` for newline, draggable + resizable panel with memory.
+- **API**: `POST /api/chat`, `POST /api/chat/stream` (SSE), `GET /api/chat/node`, provider CRUD under `/api/chat/providers`. Backend env: `GALAXY_LLM_URL` / `GALAXY_LLM_MODEL`, or `GALAXY_LLM_BASE` / `GALAXY_LLM_KEY` / `GALAXY_LLM_CUSTOM_MODEL` for a remote endpoint.
 
 ---
 
@@ -70,9 +82,9 @@ Code Graph Galaxy is available as a native desktop application and a portable CL
 
 ### Option A: Pre-built Desktop App (Recommended)
 Download the latest version for your OS from [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases):
-1. **Windows**: Run `Code-Graph-Galaxy-Setup-1.0.4.exe` or download the single-file `Code-Graph-Galaxy-1.0.4.exe` (Portable).
-2. **macOS**: Open `Code-Graph-Galaxy-1.0.4.dmg` (`-arm64.dmg` on Apple Silicon) and drag to Applications.
-3. **Linux**: Run `chmod +x Code-Graph-Galaxy-1.0.4.AppImage && ./Code-Graph-Galaxy-1.0.4.AppImage`.
+1. **Windows**: Run `Code-Graph-Galaxy-Setup-2.0.0.exe` or download the single-file `Code-Graph-Galaxy-2.0.0.exe` (Portable).
+2. **macOS**: Open `Code-Graph-Galaxy-2.0.0.dmg` (`-arm64.dmg` on Apple Silicon) and drag to Applications.
+3. **Linux**: Run `chmod +x Code-Graph-Galaxy-2.0.0.AppImage && ./Code-Graph-Galaxy-2.0.0.AppImage`.
 
 ---
 
@@ -100,10 +112,11 @@ Open your browser at `http://localhost:5001`.
 npm install
 npm start
 ```
+`npm install` pulls the pinned CodeGraph indexer (no separate CLI install) and `npm start` launches the desktop app. AI Chat needs a local model (Ollama) or a configured provider — see section 7.
 
 ---
 
-## ⌨️ Shortcut Keys & Controls
+## Shortcut Keys & Controls
 
 | Shortcut / Action | Function |
 | :--- | :--- |
@@ -111,6 +124,10 @@ npm start
 | **Right Click + Drag** | Pan and shift graph position |
 | **Mouse Wheel / Scroll** | Zoom in / Zoom out |
 | **Node Click** | Select node, highlight connections & open Code Inspector |
+| **Double-Click Empty Space** | Fit entire graph back into view |
+| **WASD / Arrow Keys** | Fly around (`Shift` = boost) |
+| **`Q` / `E`** | Descend / ascend vertically |
+| **`Enter` / `Shift+Enter`** (in AI Chat) | Send message / newline |
 | **`Ctrl + 0`** | Reset camera to default perspective |
 | **`Ctrl + Space`** | Toggle auto galaxy rotation |
 | **`Ctrl + O`** | Open Repository Management Modal |
@@ -154,6 +171,6 @@ We welcome community contributions, bug reports, and feature requests!
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.

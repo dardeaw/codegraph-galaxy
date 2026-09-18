@@ -797,10 +797,42 @@ function init3DGraph() {
     });
 
   window.addEventListener('resize', () => {
-    if (Graph) Graph.width(window.innerWidth).height(window.innerHeight);
+    if (!Graph) return;
+    layoutGraphViewport();
+    try { Graph.height(window.innerHeight); } catch (e) { /* ignore */ }
   });
+  try {
+    const drawerEl = document.getElementById('drawer');
+    if (drawerEl && typeof MutationObserver !== 'undefined') {
+      new MutationObserver(() => layoutGraphViewport())
+        .observe(drawerEl, { attributes: true, attributeFilter: ['class'] });
+    }
+    if (drawerEl && typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => layoutGraphViewport()).observe(drawerEl);
+    }
+  } catch (e) { /* observers optional */ }
+  layoutGraphViewport();
   ensureFileLabelLayer();
   startFlightLoop();
+}
+
+// 3D canvas yields to the Inspector drawer: orbit center stays in the visible
+// strip so focusOnNode never lands under the panel.
+function drawerViewportCut() {
+  try {
+    const drawer = document.getElementById('drawer');
+    if (drawer && drawer.classList.contains('open')) {
+      return drawer.getBoundingClientRect().width || 0;
+    }
+  } catch (e) { /* ignore */ }
+  return 0;
+}
+
+function layoutGraphViewport() {
+  if (typeof Graph === 'undefined' || !Graph || !Graph.width) return;
+  try {
+    Graph.width(Math.max(320, window.innerWidth - drawerViewportCut()));
+  } catch (e) { /* ignore */ }
 }
 
 // ==========================================
@@ -840,34 +872,46 @@ function flightOffset(fwd, right, up, keys, speed) {
 
 function startFlightLoop() {
   const tick = () => {
-    try {
-      if (flightKeys.size && typeof Graph !== 'undefined' && Graph && Graph.cameraPosition) {
-        const pos = Graph.cameraPosition();
-        const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
-        const tgt = (ctrl && ctrl.target) ? ctrl.target : { x: 0, y: 0, z: 0 };
-        const fwd = { x: tgt.x - pos.x, y: tgt.y - pos.y, z: tgt.z - pos.z };
-        const dist = Math.sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z) || 1;
-        fwd.x /= dist; fwd.y /= dist; fwd.z /= dist;
-        const up = { x: 0, y: 1, z: 0 };
-        const right = {
-          x: fwd.y * up.z - fwd.z * up.y,
-          y: fwd.z * up.x - fwd.x * up.z,
-          z: fwd.x * up.y - fwd.y * up.x,
-        };
-        const speed = dist * 0.02 * (flightKeys.has('shift') ? 3.5 : 1);
-        const o = flightOffset(fwd, right, up, flightKeys, speed);
-        if (o.x || o.y || o.z) {
-          Graph.cameraPosition({ x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z });
-          if (ctrl && ctrl.target) {
-            ctrl.target.x += o.x; ctrl.target.y += o.y; ctrl.target.z += o.z;
-            if (typeof ctrl.update === 'function') ctrl.update();
-          }
-        }
-      }
-    } catch (e) { /* never break the render loop */ }
+    try { flightStep(); } catch (e) { /* never break the render loop */ }
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+}
+
+function flightStep() {
+  if (!flightKeys.size || typeof Graph === 'undefined' || !Graph || !Graph.cameraPosition) return false;
+  const pos = Graph.cameraPosition();
+  let tgt = { x: 0, y: 0, z: 0 };
+  try {
+    const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+    if (ctrl && ctrl.target && isFinite(ctrl.target.x)) {
+      tgt = { x: ctrl.target.x, y: ctrl.target.y, z: ctrl.target.z };
+    }
+  } catch (e) { /* keep fallback target */ }
+  const fwd = { x: tgt.x - pos.x, y: tgt.y - pos.y, z: tgt.z - pos.z };
+  const dist = Math.sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z) || 1;
+  fwd.x /= dist; fwd.y /= dist; fwd.z /= dist;
+  const up = { x: 0, y: 1, z: 0 };
+  const right = {
+    x: fwd.y * up.z - fwd.z * up.y,
+    y: fwd.z * up.x - fwd.x * up.z,
+    z: fwd.x * up.y - fwd.y * up.x,
+  };
+  const speed = dist * 0.02 * (flightKeys.has('shift') ? 3.5 : 1);
+  const o = flightOffset(fwd, right, up, flightKeys, speed);
+  if (!o.x && !o.y && !o.z) return false;
+  const newPos = { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z };
+  const newLook = { x: tgt.x + o.x, y: tgt.y + o.y, z: tgt.z + o.z };
+  // lookAt follows: pure translation, no tilt (this is what makes Q/E truly vertical)
+  Graph.cameraPosition(newPos, newLook);
+  try {
+    const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+    if (ctrl && ctrl.target) {
+      ctrl.target.x = newLook.x; ctrl.target.y = newLook.y; ctrl.target.z = newLook.z;
+      if (typeof ctrl.update === 'function') ctrl.update();
+    }
+  } catch (e) { /* ignore */ }
+  return true;
 }
 
 // ==========================================

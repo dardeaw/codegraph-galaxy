@@ -3142,6 +3142,7 @@ function sendChatMessage(text) {
           const summary = frame.data.strSummary || frame.data.summary || '';
           row.textContent = `${traceToolLabel(tool)} — ${summary}`;
           traceRows.appendChild(row);
+          appendTraceNodeChips(traceRows, (frame.data.vNodes || frame.data.nodes || []));
         } else if (frame.event === 'chat_done' && frame.data) {
           finishChatAnswer(frame.data, steps, accumulated, aiDiv, traceRows, text);
         } else if (frame.event === 'error') {
@@ -3286,6 +3287,47 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   document.dispatchEvent(new CustomEvent('rd:chat-message', {
     detail: { strReply: reply, vHighlights: highlights, vTrace: trace },
   }));
+}
+
+function traceNodeColor(kind) {
+  const k = String(kind || '').toLowerCase();
+  if (k.includes('file')) return '#f0883e';
+  if (k.includes('class') || k.includes('interface') || k.includes('namespace') || k.includes('struct')) return '#3fb950';
+  return '#58a6ff';
+}
+
+function locateChatNode(id) {
+  if (typeof Graph === 'undefined' || !Graph || !Graph.graphData) return;
+  const n = (Graph.graphData().nodes || []).find((x) => x && x.id === id);
+  if (n) {
+    focusOnNode(n);
+    try { openDrawer(n); } catch (e) { /* drawer optional */ }
+  } else {
+    showToast(t('chat_no_nodes'));
+  }
+}
+
+function appendTraceNodeChips(box, nodes) {
+  if (!nodes || !nodes.length || !box) return;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 4px 14px;';
+  for (const nd of nodes.slice(0, 8)) {
+    if (!nd || !nd.id) continue;
+    const chip = document.createElement('button');
+    const color = traceNodeColor(nd.kind);
+    chip.style.cssText = `border:1px solid ${color}66; background:${color}18; color:${color}; border-radius:999px; padding:2px 9px; font-size:var(--cfs-sm); cursor:pointer; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;`;
+    chip.textContent = `● ${nd.name || nd.id}`;
+    chip.title = `${nd.id}${nd.project ? ` @${nd.project}` : ''} — click to locate`;
+    chip.onclick = () => locateChatNode(nd.id);
+    wrap.appendChild(chip);
+  }
+  if (nodes.length > 8) {
+    const more = document.createElement('span');
+    more.style.cssText = 'color:#8b949e; font-size:var(--cfs-sm); align-self:center;';
+    more.textContent = `+${nodes.length - 8}`;
+    wrap.appendChild(more);
+  }
+  box.appendChild(wrap);
 }
 
 function showChatHighlights(ids) {

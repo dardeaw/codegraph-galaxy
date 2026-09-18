@@ -469,8 +469,8 @@ class GalaxyChatProvider:
                 continue
         return vAll, ""
 
-    def _FnRunTool(self, strName: str, dicArgs: Dict[str, Any], dicCtx: Dict[str, Any]) -> Tuple[Any, str, List[str], Optional[str]]:
-        """Returns (result_for_llm, trace_summary, highlight_ids, resolved_project)."""
+    def _FnRunTool(self, strName: str, dicArgs: Dict[str, Any], dicCtx: Dict[str, Any]) -> Tuple[Any, str, List[str], Optional[str], List[Dict[str, Any]]]:
+        """Returns (result_for_llm, trace_summary, highlight_ids, resolved_project, trace_nodes)."""
         vScope = self._FnScopeProjects(dicCtx)
         if strName == "galaxy_search_symbols":
             vHits, strErr = self._FnSearchAll(str(dicArgs.get("keyword", "")),
@@ -485,23 +485,28 @@ class GalaxyChatProvider:
                 return str(h.get("name") or h.get("qualified_name") or h.get("id") or "?")
 
             strNames = "、".join(f"{_disp(h)}@{h.get('project', '?')}" for h in vHits[:6]) or "none"
-            return vHits, f"命中 {len(vHits)} 個：{strNames}", vIds, None
+            vNodes = [{"id": h.get("id"), "name": _disp(h), "kind": h.get("kind") or "",
+                       "project": h.get("project", "")} for h in vHits[:8] if h.get("id")]
+            return vHits, f"命中 {len(vHits)} 個：{strNames}", vIds, None, vNodes
         if strName in ("galaxy_get_neighbors", "galaxy_blast_radius"):
             strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx, vScope)
             if strErr:
-                return {"error": strErr}, strErr, [], None
+                return {"error": strErr}, strErr, [], None, []
             dicRes = self._FnHops(strDb, str(dicArgs.get("node_id", "")), int(dicArgs.get("depth", 1) or 1))
             vIds = [n["id"] for n in dicRes["nodes"] if n.get("id")]
-            return dicRes, f"[{strProj}] 展開 {dicRes['count']} 個相鄰節點", vIds, strProj
+            vNodes = [{"id": n.get("id"), "name": str(n.get("name") or n.get("id") or "?"),
+                       "kind": n.get("kind") or "", "project": strProj or ""}
+                      for n in dicRes["nodes"][:10] if n.get("id")]
+            return dicRes, f"[{strProj}] 展開 {dicRes['count']} 個相鄰節點", vIds, strProj, vNodes
         if strName == "galaxy_get_code":
             strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx, vScope)
             if strErr:
-                return {"error": strErr}, strErr, [], None
+                return {"error": strErr}, strErr, [], None, []
             nStart = max(1, int(dicArgs.get("start_line", 1) or 1))
             nEnd = min(nStart + MAX_CODE_LINES, int(dicArgs.get("end_line", nStart + 50) or (nStart + 50)))
             dicSnippet, _ = extract_code_snippet(strRepo, str(dicArgs.get("file_path", "")), nStart, nEnd)
-            return dicSnippet, f"[{strProj}] 讀取 {dicArgs.get('file_path')}:{nStart}-{nEnd}", [], strProj
-        return {"error": f"unknown tool {strName}"}, "未知工具", [], None
+            return dicSnippet, f"[{strProj}] 讀取 {dicArgs.get('file_path')}:{nStart}-{nEnd}", [], strProj, []
+        return {"error": f"unknown tool {strName}"}, "未知工具", [], None, []
 
     # ---------------- target repo ----------------
     def _FnKnownIndexed(self) -> List[str]:
@@ -583,10 +588,11 @@ class GalaxyChatProvider:
                 for dicCall in vCalls:
                     strName = str(dicCall.get("name") or "")
                     dicArgs = dicCall.get("args") or {}
-                    oResult, strSummary, vIds, strProj = self._FnRunTool(strName, dicArgs, dicCtx)
+                    oResult, strSummary, vIds, strProj, vNodes = self._FnRunTool(strName, dicArgs, dicCtx)
                     if strProj:
                         strResolved = strProj
-                    dicStep = {"strTool": strName, "dicArgs": dicArgs, "strSummary": strSummary}
+                    dicStep = {"strTool": strName, "dicArgs": dicArgs,
+                               "strSummary": strSummary, "vNodes": vNodes or []}
                     vTrace.append(dicStep)
                     if fnOnTrace:
                         fnOnTrace(dicStep)

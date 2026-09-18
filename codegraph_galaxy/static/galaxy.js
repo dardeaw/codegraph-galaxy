@@ -321,6 +321,7 @@ const I18N = {
     chat_copied: 'Copied.',
     chat_locating: 'Locating node… (opening layers as needed)',
     chat_lod_escalated: 'Switched to Standard mode to show function nodes.',
+    chat_show_parent: 'Hidden in this view — showing parent {name} ({kind}).',
     chat_welcome: '👋 Ask me about this codebase, e.g.:\n• Where is the entry point, and what runs at startup?\n• Which functions does login go through?\n• If I change payment, who breaks?\n• What does the auth module do?\n\nI look the code up for real — watch the lookup trace, then hit "Show on graph".',
     prov_title: 'Model Providers',
     prov_add: 'Add provider',
@@ -484,6 +485,7 @@ const I18N = {
     chat_copied: '已複製。',
     chat_locating: '定位節點中…（自動開啟所需圖層）',
     chat_lod_escalated: '已自動切到 Standard 模式以顯示 function 節點。',
+    chat_show_parent: '目前視圖中隱藏，已定位到母節點 {name}（{kind}）。',
     chat_welcome: '👋 直接問這個 codebase，例如：\n• 進入點在哪？啟動時跑了什麼？\n• 登入會經過哪些函式？\n• 改了金流會炸到誰？\n• auth 模組在幹嘛？\n\n我會真的去查 code——看查碼過程，再按「在圖上顯示」。',
     prov_title: '模型服務商',
     prov_add: '新增服務商',
@@ -3628,6 +3630,10 @@ function locateChatNode(id) {
     if (n) {
       focusOnNode(n);
       try { openDrawer(n); } catch (e) { /* drawer optional */ }
+      try { syncExplorerSelection(n); } catch (e) { /* ignore */ }
+      if (n._viaAncestor) {
+        showToast(t('chat_show_parent', { name: n.name || n.id, kind: n.kind || '' }));
+      }
     } else {
       showToast(t('chat_no_nodes'));
     }
@@ -3654,6 +3660,8 @@ function setChatLOD(mode) {
   loadRootGraph();
 }
 
+// Walk-up locate: never touches layers or LOD. If the node itself is not
+// revealed, climb vAncestors (nearest first) to the first visible node.
 async function ensureChatNodeVisible(id, projectHint) {
   let n = findGraphNode(id);
   if (n) return n;
@@ -3664,34 +3672,23 @@ async function ensureChatNodeVisible(id, projectHint) {
     info = await res.json();
   } catch (e) { /* backend unreachable */ }
   if (!info || !info.found) return null;
-  // 1. project must be selected (tree rebuilds itself from the set)
+  // Its project must be selected for anything (self or ancestors) to appear.
   if (!selectedProjects.has(info.project)) {
     selectedProjects.add(info.project);
-  }
-  // 2. kind layer on (frontend filter)
-  let unhidden = false;
-  for (const h of Array.from(hiddenKinds)) {
-    try {
-      if (getRelatedKinds(h).includes(info.kind)) {
-        hiddenKinds.delete(h);
-        unhidden = true;
-      }
-    } catch (e) { /* ignore */ }
-  }
-  // 3. backend arch LOD drops function-family kinds entirely → escalate once
-  const backendHidden = ['function', 'method', 'route', 'import', 'variable', 'field', 'constant', 'property'];
-  if (currentLOD === 'arch' && backendHidden.includes(info.kind)) {
-    showToast(t('chat_lod_escalated'));
-    setChatLOD('standard');
-  } else {
-    if (unhidden) updateLegendUI();
     loadRootGraph();
   }
-  // 4. poll for arrival (reload is async)
+  const cands = [{ id, kind: info.kind, name: info.name }, ...((info.vAncestors) || [])];
   for (let i = 0; i < 40; i++) {
+    for (const c of cands) {
+      const hit = findGraphNode(c.id);
+      if (hit) {
+        if (hit.id !== id) {
+          hit._viaAncestor = { id, name: info.name, kind: info.kind };
+        }
+        return hit;
+      }
+    }
     await new Promise((r) => setTimeout(r, 250));
-    n = findGraphNode(id);
-    if (n) return n;
   }
   return null;
 }
@@ -3722,50 +3719,92 @@ function appendTraceNodeChips(box, nodes) {
 
 async function showChatHighlights(ids) {
   if (!ids || !ids.length || typeof Graph === 'undefined' || !Graph || !Graph.graphData) return;
-  const missing = ids.filter((id) => !findGraphNode(id));
-  if (missing.length) {
-    const meta = (typeof chatNodeIndex !== 'undefined' && chatNodeIndex[missing[0]]) || {};
-    showToast(t('chat_locating'));
-    await ensureChatNodeVisible(missing[0], meta.project || '');
-  }
-  const doHighlight = () => {
-    const data = Graph.graphData();
-  const nodes = data.nodes || [];
-  const links = data.links || [];
-  const byId = new Map();
-  for (const n of nodes) {
-    if (n && n.id) byId.set(n.id, n);
-  }
-  highlightNodes.clear();
-  highlightLinks.clear();
-  let shown = 0;
+  // Resolve each id to itself-or-nearest-revealed-ancestor (single reload, one poll).
+  const resolved = new Map();
+  const missing = [];
   for (const id of ids) {
-    if (byId.has(id)) {
-      highlightNodes.add(id);
-      shown++;
+    const direct = findGraphNode(id);
+    if (direct) resolved.set(id, direct);
+    else missing.push(id);
+  }
+  if (missing.length) {
+    showToast(t('chat_locating'));
+    const infos = await Promise.all(missing.map(async (id) => {
+      const meta = (typeof chatNodeIndex !== 'undefined' && chatNodeIndex[id]) || {};
+      try {
+        const res = await fetch(`/api/chat/node?id=${encodeURIComponent(id)}&project=${encodeURIComponent(meta.project || '')}`);
+        return { id, info: await res.json() };
+      } catch (e) {
+        return { id, info: null };
+      }
+    }));
+    let needReload = false;
+    for (const { info } of infos) {
+      if (info && info.found && !selectedProjects.has(info.project)) {
+        selectedProjects.add(info.project);
+        needReload = true;
+      }
+    }
+    if (needReload) loadRootGraph();
+    for (let i = 0; i < 40; i++) {
+      let allDone = true;
+      for (const { id, info } of infos) {
+        if (resolved.has(id) || !info || !info.found) continue;
+        const cands = [id, ...((info.vAncestors) || []).map((a) => a.id)];
+        let hit = null;
+        for (const cid of cands) {
+          hit = findGraphNode(cid);
+          if (hit) break;
+        }
+        if (hit) {
+          if (hit.id !== id) hit._viaAncestor = { id, name: info.name, kind: info.kind };
+          resolved.set(id, hit);
+        } else {
+          allDone = false;
+        }
+      }
+      if (allDone) break;
+      await new Promise((r) => setTimeout(r, 250));
     }
   }
-  for (const l of links) {
+  const seenIds = new Set();
+  const uniq = [];
+  for (const id of ids) {
+    const n = resolved.get(id);
+    if (n && !seenIds.has(n.id)) {
+      seenIds.add(n.id);
+      uniq.push(n);
+    }
+  }
+  if (!uniq.length) {
+    showToast(t('chat_no_nodes'));
+    return;
+  }
+  const idSet = new Set(uniq.map((n) => n.id));
+  highlightNodes.clear();
+  highlightLinks.clear();
+  for (const id of idSet) highlightNodes.add(id);
+  for (const l of (Graph.graphData().links || [])) {
     const s = (l.source && l.source.id) || l.source;
-    const t = (l.target && l.target.id) || l.target;
-    if (highlightNodes.has(s) && highlightNodes.has(t)) highlightLinks.add(l);
+    const tt = (l.target && l.target.id) || l.target;
+    if (highlightNodes.has(s) && highlightNodes.has(tt)) highlightLinks.add(l);
   }
   Graph.nodeColor(Graph.nodeColor())
     .linkColor(Graph.linkColor())
     .linkWidth(Graph.linkWidth())
     .linkDirectionalParticles(Graph.linkDirectionalParticles());
-  const first = ids.map((id) => byId.get(id)).find(Boolean);
-  if (first) {
-    focusOnNode(first);
-    try { openDrawer(first); } catch (e) { /* drawer optional */ }
+  const first = uniq[0];
+  focusOnNode(first);
+  try { openDrawer(first); } catch (e) { /* drawer optional */ }
+  try { syncExplorerSelection(first); } catch (e) { /* ignore */ }
+  if (uniq.length < ids.length) {
+    showToast(t('chat_highlight_partial', { shown: uniq.length, total: ids.length }));
   }
-  if (shown < ids.length) {
-    showToast(t('chat_highlight_partial', { shown, total: ids.length }));
-  } else {
-    showToast(t('chat_highlighted', { n: shown }));
+  if (first._viaAncestor) {
+    showToast(t('chat_show_parent', { name: first.name || first.id, kind: first.kind || '' }));
+  } else if (uniq.length === ids.length) {
+    showToast(t('chat_highlighted', { n: uniq.length }));
   }
-  };
-  doHighlight();
 }
 
 function toggleHelp(force) {

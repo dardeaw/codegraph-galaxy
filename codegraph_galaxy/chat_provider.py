@@ -302,11 +302,81 @@ def vProviders_models(dicList: Dict[str, Any], str_id: str) -> List[str]:
     return []
 
 
+def _FnNodeAncestors(oCur, b_has_parent: bool, r, str_project: str) -> List[Dict[str, Any]]:
+    """Nearest-first ancestor chain for walk-up locate.
+
+    Supports legacy DBs (parent_id column) and the current schema
+    (qualified_name inference + file fallback). Never includes self.
+    """
+    v_chain: List[Dict[str, Any]] = []
+    seen = {r["id"]}
+
+    def _push(o_row) -> None:
+        if o_row is not None and o_row["id"] not in seen:
+            seen.add(o_row["id"])
+            v_chain.append({"id": o_row["id"], "name": o_row["name"],
+                            "kind": o_row["kind"], "project": str_project,
+                            "file_path": o_row["file_path"]})
+
+    # 1. legacy parent_id walk (old DBs only)
+    if b_has_parent:
+        try:
+            str_pid = r["parent_id"]
+        except Exception:
+            str_pid = None
+        n_guard = 0
+        while str_pid and n_guard < 8:
+            n_guard += 1
+            try:
+                o_pr = oCur.execute(
+                    "SELECT id, name, kind, file_path, parent_id FROM nodes "
+                    "WHERE id = ? LIMIT 1", (str_pid,)).fetchone()
+            except Exception:
+                break
+            if not o_pr:
+                break
+            _push(o_pr)
+            try:
+                str_pid = o_pr["parent_id"]
+            except Exception:
+                break
+
+    # 2. qualified_name inference: StateMachine::__init__ -> StateMachine
+    str_qn = r["qualified_name"] or ""
+    str_sep = "::" if "::" in str_qn else ("." if "." in str_qn else "")
+    if str_sep:
+        v_parts = str_qn.split(str_sep)
+        for n_idx in range(len(v_parts) - 1, 0, -1):
+            str_pqn = str_sep.join(v_parts[:n_idx])
+            try:
+                o_qr = oCur.execute(
+                    "SELECT id, name, kind, file_path FROM nodes "
+                    "WHERE qualified_name = ? AND file_path = ? LIMIT 1",
+                    (str_pqn, r["file_path"])).fetchone()
+            except Exception:
+                o_qr = None
+            if o_qr:
+                _push(o_qr)
+
+    # 3. file fallback (arch LOD always reveals files)
+    try:
+        o_fr = oCur.execute(
+            "SELECT id, name, kind, file_path FROM nodes "
+            "WHERE kind = 'file' AND file_path = ? LIMIT 1",
+            (r["file_path"],)).fetchone()
+    except Exception:
+        o_fr = None
+    if o_fr:
+        _push(o_fr)
+    return v_chain
+
+
 def FnFindNode(str_node_id: str, str_project: str = "",
                fn_resolve_db=None, fn_list_projects=None) -> Dict[str, Any]:
     """Locate one node across indexed DBs (for 3D fly-to).
 
-    Returns {found, id, name, kind, project, file_path, start_line}.
+    Returns {found, id, name, kind, project, file_path, start_line,
+             vAncestors (nearest-first: [{id, name, kind, project, file_path}])}.
     Hinted project first, then all indexed.
     """
     if not str_node_id:
@@ -328,13 +398,19 @@ def FnFindNode(str_node_id: str, str_project: str = "",
             oConn = _connect_db(t[0])
             try:
                 oCur = oConn.cursor()
+                v_cols = {c[1] for c in oCur.execute("PRAGMA table_info(nodes)")}
+                b_has_parent = "parent_id" in v_cols
+                str_cols = "id, name, kind, file_path, start_line, qualified_name"
+                if b_has_parent:
+                    str_cols += ", parent_id"
                 r = oCur.execute(
-                    "SELECT id, name, kind, file_path, start_line, qualified_name FROM nodes "
-                    "WHERE id = ? LIMIT 1", (str_node_id,)).fetchone()
+                    f"SELECT {str_cols} FROM nodes WHERE id = ? LIMIT 1",
+                    (str_node_id,)).fetchone()
                 if r:
                     return {"found": True, "id": r["id"], "name": r["name"],
                             "kind": r["kind"], "project": strName,
-                            "file_path": r["file_path"], "start_line": r["start_line"]}
+                            "file_path": r["file_path"], "start_line": r["start_line"],
+                            "vAncestors": _FnNodeAncestors(oCur, b_has_parent, r, strName)}
             finally:
                 oConn.close()
         except Exception:

@@ -370,18 +370,7 @@
   <div style="display:flex; gap:6px; padding:8px 12px 0; align-items:center;">
     <span id="lbl-chat-model" style="font-size:11px; color:#8b949e;">Model</span>
     <select id="chat-model" style="flex:1; background:#010409; border:1px solid #30363d; border-radius:6px; padding:5px 8px; color:#e6edf3; font-size:11px; max-width:100%; min-width:0;"></select>
-    <button id="chat-prov-gear" onclick="toggleProviderSettings()" title="Manage providers" style="background:transparent; border:1px solid #30363d; border-radius:6px; color:#8b949e; cursor:pointer; padding:5px 8px; font-size:11px;">⚙</button>
-  </div>
-  <div id="chat-prov-settings" style="display:none; padding:8px 12px 0; font-size:11px;">
-    <div id="chat-prov-list" style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;"></div>
-    <div style="display:flex; gap:4px; flex-wrap:wrap;">
-      <input id="chat-prov-label" placeholder="Label e.g. DeepSeek local" style="flex:1; min-width:80px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:5px 8px; color:#e6edf3; font-size:11px;" />
-      <input id="chat-prov-base" placeholder="Base URL …/v1" style="flex:1; min-width:80px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:5px 8px; color:#e6edf3; font-size:11px;" />
-      <input id="chat-prov-key" placeholder="Key (optional)" style="flex:1; min-width:80px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:5px 8px; color:#e6edf3; font-size:11px;" />
-      <input id="chat-prov-models" placeholder="Models, comma separated" style="flex:1; min-width:80px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:5px 8px; color:#e6edf3; font-size:11px;" />
-      <button onclick="addChatProvider()" style="background:#238636; border:1px solid #2ea043; color:#fff; border-radius:6px; padding:5px 10px; cursor:pointer; font-size:11px;">＋</button>
-    </div>
-    <div id="chat-prov-msg" style="color:#8b949e; margin-top:4px; min-height:14px;"></div>
+    <button id="chat-prov-gear" onclick="toggleProviderDialog(true)" title="Manage providers" style="background:transparent; border:1px solid #30363d; border-radius:6px; color:#8b949e; cursor:pointer; padding:5px 8px; font-size:11px;">⚙</button>
   </div>
   <div style="display:flex; gap:6px; padding:8px 12px 0; align-items:center;">
     <span id="lbl-chat-project" style="font-size:11px; color:#8b949e;">Scope</span>
@@ -392,6 +381,41 @@
     <button id="chat-send" onclick="sendChatFromInput()" style="background:#238636; border:1px solid #2ea043; color:#fff; border-radius:6px; padding:7px 12px; cursor:pointer; align-self:flex-end;">➤</button>
   </div>
   <div id="chat-resize" title="Resize" style="position:absolute; right:3px; bottom:3px; width:14px; height:14px; cursor:nwse-resize; color:#8b949e; font-size:12px; line-height:14px; text-align:center; user-select:none;">⌟</div>
+</div>
+
+<!-- Provider Manager Dialog -->
+<div id="prov-dialog" style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+  <div style="width:460px; max-width:92vw; max-height:84vh; overflow-y:auto; background:#0d1117; border:1px solid #30363d; border-radius:12px; padding:16px; font-size:12px; color:#e6edf3;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+      <span id="lbl-prov-title" style="font-weight:600; font-size:13px;">Model Providers</span>
+      <button onclick="toggleProviderDialog(false)" style="background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:14px;">✕</button>
+    </div>
+    <div id="chat-prov-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;"></div>
+    <div id="lbl-prov-add" style="font-weight:600; margin-bottom:6px;">Add provider</div>
+    <div id="prov-presets" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-label">Label</span>
+        <input id="chat-prov-label" placeholder="e.g. DeepSeek local" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
+      </label>
+      <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-base">Base URL (OpenAI-compatible …/v1, or Ollama host)</span>
+        <input id="chat-prov-base" placeholder="https://api.deepseek.com/v1" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
+      </label>
+      <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-key">API key (optional, stored on this machine only)</span>
+        <input id="chat-prov-key" type="password" placeholder="sk-…" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
+      </label>
+      <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-models">Models (comma separated)</span>
+        <div style="display:flex; gap:6px; margin-top:2px;">
+          <input id="chat-prov-models" placeholder="deepseek-chat, deepseek-reasoner" style="flex:1; min-width:0; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
+          <button id="btn-prov-fetch" onclick="fetchProvModels()" style="background:transparent; border:1px solid #1f6feb; color:#58a6ff; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:12px; white-space:nowrap;">⇩ <span id="lbl-prov-fetch">Auto-fill</span></button>
+        </div>
+      </label>
+    </div>
+    <div id="chat-prov-msg" style="color:#8b949e; margin-top:8px; min-height:16px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+      <button onclick="toggleProviderDialog(false)" style="background:transparent; border:1px solid #30363d; color:#c9d1d9; border-radius:6px; padding:7px 14px; cursor:pointer;">✕ <span id="lbl-prov-cancel">Cancel</span></button>
+      <button onclick="addChatProvider()" style="background:#238636; border:1px solid #2ea043; color:#fff; border-radius:6px; padding:7px 14px; cursor:pointer;">＋ <span id="lbl-prov-save">Save</span></button>
+    </div>
+  </div>
 </div>
 
 </body>

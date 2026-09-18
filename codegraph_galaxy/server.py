@@ -7,7 +7,7 @@ from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
-from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider
+from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels
 
 def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
@@ -212,6 +212,11 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     @app.route("/api/chat/providers/<pid>/test", methods=["POST"])
     def chat_test_provider(pid):
         return jsonify(FnTestProvider(pid))
+
+    @app.route("/api/chat/providers/models", methods=["POST"])
+    def chat_remote_models():
+        data = request.get_json(silent=True) or {}
+        return jsonify(FnListRemoteModels(data.get("base", ""), data.get("key", "")))
 
     @app.route("/api/chat", methods=["POST"])
     def chat():

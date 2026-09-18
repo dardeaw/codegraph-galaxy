@@ -306,6 +306,16 @@ const I18N = {
     chat_project: 'Scope',
     chat_scope_all: 'All projects (follows Explorer)',
     chat_prov_test: 'Test',
+    chat_welcome: '👋 I actually look code up before answering:\n• The 4 chips above are shortcuts — tap one\n• Scope follows your Explorer checks, no project picking needed\n• Every answer shows its lookup trace; "Show on graph" lights the nodes\n• Switch models up top, ⚙ adds your own endpoint\n• Enter sends, Shift+Enter newline',
+    prov_title: 'Model Providers',
+    prov_add: 'Add provider',
+    prov_f_label: 'Label',
+    prov_f_base: 'Base URL (OpenAI-compatible …/v1, or Ollama host)',
+    prov_f_key: 'API key (optional, stored on this machine only)',
+    prov_f_models: 'Models (comma separated)',
+    prov_fetch: 'Auto-fill',
+    prov_cancel: 'Cancel',
+    prov_save: 'Save',
     chat_placeholder: 'Ask anything about the code…',
     chat_thinking: 'Thinking…',
     chat_trace_title: '🔍 Lookup trace ({n} steps)',
@@ -443,6 +453,16 @@ const I18N = {
     chat_project: '範圍',
     chat_scope_all: '全部專案（跟 Explorer 連動）',
     chat_prov_test: '測試',
+    chat_welcome: '👋 我會真的去查 code 再回答：\n• 上面四顆是快捷提問，點了直接問\n• 範圍跟著 Explorer 勾選走，不用選專案\n• 每個回答附查碼過程，點「在圖上顯示」打光\n• 上面可換模型，⚙ 可加自己的 endpoint\n• Enter 送出，Shift+Enter 換行',
+    prov_title: '模型服務商',
+    prov_add: '新增服務商',
+    prov_f_label: '名稱',
+    prov_f_base: 'Base URL（OpenAI 相容 …/v1，或 Ollama 主機）',
+    prov_f_key: 'API key（選填，只存這台機器）',
+    prov_f_models: '模型（逗號分隔）',
+    prov_fetch: '自動帶入',
+    prov_cancel: '取消',
+    prov_save: '儲存',
     chat_placeholder: '問 codebase 任何問題…',
     chat_thinking: '思考中…',
     chat_trace_title: '🔍 查碼過程（{n} 步）',
@@ -2710,12 +2730,71 @@ function initChatPanelEdges(panel) {
   }
 }
 
-function toggleProviderSettings(force) {
-  const box = document.getElementById('chat-prov-settings');
+function toggleProviderDialog(force) {
+  const dlg = document.getElementById('prov-dialog');
+  if (!dlg) return;
+  const show = typeof force === 'boolean' ? force : dlg.style.display === 'none';
+  dlg.style.display = show ? 'flex' : 'none';
+  if (show) {
+    renderProvDialogLabels();
+    renderProvPresets();
+    refreshProviderList();
+  }
+}
+
+function provPresets() {
+  return [
+    { label: 'Ollama local', base: 'http://127.0.0.1:11434', key: '', models: '' },
+    { label: 'llama.cpp server', base: 'http://172.22.20.125:8080/v1', key: 'EMPTY', models: '' },
+    { label: 'OpenAI', base: 'https://api.openai.com/v1', key: '', models: 'gpt-4o-mini' },
+    { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', key: '', models: 'deepseek-chat, deepseek-reasoner' },
+  ];
+}
+
+function renderProvPresets() {
+  const box = document.getElementById('prov-presets');
   if (!box) return;
-  const show = typeof force === 'boolean' ? force : box.style.display === 'none';
-  box.style.display = show ? 'block' : 'none';
-  if (show) refreshProviderList();
+  box.innerHTML = '';
+  for (const p of provPresets()) {
+    const b = document.createElement('button');
+    b.textContent = p.label;
+    b.style.cssText = 'border:1px solid #30363d; background:#161b22; color:#c9d1d9; border-radius:999px; padding:4px 12px; font-size:11px; cursor:pointer;';
+    b.onclick = () => {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      set('chat-prov-label', p.label);
+      set('chat-prov-base', p.base);
+      set('chat-prov-key', p.key);
+      set('chat-prov-models', p.models);
+      fetchProvModels();
+    };
+    box.appendChild(b);
+  }
+}
+
+function fetchProvModels() {
+  const msg = document.getElementById('chat-prov-msg');
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  if (msg) msg.textContent = '…';
+  fetch('/api/chat/providers/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base: val('chat-prov-base'), key: val('chat-prov-key') }),
+  })
+    .then((res) => res.json())
+    .then((d) => {
+      if (d.ok && d.models && d.models.length) {
+        const el = document.getElementById('chat-prov-models');
+        if (el) el.value = d.models.slice(0, 12).join(', ');
+        if (msg) msg.textContent = `✅ ${d.models.length} models (${d.kind || ''})`;
+      } else if (msg) {
+        msg.textContent = `❌ ${(d && d.error) || 'empty'}`;
+      }
+    })
+    .catch(() => { if (msg) msg.textContent = '❌'; });
+}
+
+function toggleProviderSettings(force) {
+  toggleProviderDialog(force);
 }
 
 function refreshProviderList() {
@@ -2785,11 +2864,38 @@ function addChatProvider() {
         });
         refreshProviderList();
         loadChatModels();
+        toggleProviderDialog(false);
       } else if (msg) {
         msg.textContent = `❌ ${(body && body.strError) || status}`;
       }
     })
     .catch(() => { if (msg) msg.textContent = '❌'; });
+}
+
+let chatWelcomed = false;
+
+function showChatWelcome() {
+  const box = document.getElementById('chat-msgs');
+  if (!box || box.children.length > 0 || chatHistory.length > 0) return;
+  chatWelcomed = true;
+  const div = document.createElement('div');
+  div.setAttribute('data-guide', '1');
+  div.style.cssText = 'align-self:flex-start; max-width:94%; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:6px 10px; white-space:pre-wrap; word-break:break-word;';
+  div.textContent = t('chat_welcome');
+  box.appendChild(div);
+}
+
+function renderProvDialogLabels() {
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  set('lbl-prov-title', t('prov_title'));
+  set('lbl-prov-add', t('prov_add'));
+  set('lbl-prov-f-label', t('prov_f_label'));
+  set('lbl-prov-f-base', t('prov_f_base'));
+  set('lbl-prov-f-key', t('prov_f_key'));
+  set('lbl-prov-f-models', t('prov_f_models'));
+  set('lbl-prov-fetch', t('prov_fetch'));
+  set('lbl-prov-cancel', t('prov_cancel'));
+  set('lbl-prov-save', t('prov_save'));
 }
 
 function toggleChatPanel(force) {
@@ -2804,6 +2910,7 @@ function toggleChatPanel(force) {
     renderChatScope();
     restoreChatPanelGeom();
     initChatPanelDrag();
+    showChatWelcome();
     const inp = document.getElementById('chat-input');
     if (inp) {
       inp.focus();

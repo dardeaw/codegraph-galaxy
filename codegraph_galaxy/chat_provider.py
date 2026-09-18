@@ -173,6 +173,35 @@ def FnTestProvider(str_id: str) -> Dict[str, Any]:
     except Exception as oErr:
         return {"ok": False, "error": f"{type(oErr).__name__}: {oErr}"}
 
+
+def FnListRemoteModels(str_base: str, str_key: str = "") -> Dict[str, Any]:
+    """Fetch model ids from an arbitrary endpoint (/models then /api/tags).
+
+    Powers the provider dialog's auto-fill so users never type blind model names.
+    """
+    strBase = (str_base or "").rstrip("/")
+    if not strBase:
+        return {"ok": False, "error": "Base URL 不可為空"}
+    dicHeaders = {}
+    if str_key:
+        dicHeaders["Authorization"] = "Bearer " + str_key
+    vErrors: List[str] = []
+    for strPath, strKind in (("/models", "openai"), ("/api/tags", "ollama")):
+        try:
+            oReq = urllib.request.Request(strBase + strPath, headers=dicHeaders, method="GET")
+            with urllib.request.urlopen(oReq, timeout=10) as oRes:
+                dicData = json.loads(oRes.read().decode("utf-8"))
+            if strKind == "openai":
+                vModels = [m.get("id") for m in (dicData.get("data") or []) if m.get("id")]
+            else:
+                vModels = [m.get("name") for m in (dicData.get("models") or []) if m.get("name")]
+            if vModels:
+                return {"ok": True, "models": vModels, "kind": strKind}
+            vErrors.append(f"{strPath}: empty list")
+        except Exception as oErr:
+            vErrors.append(f"{strPath}: {type(oErr).__name__}")
+    return {"ok": False, "error": "；".join(vErrors)}
+
 SYSTEM_PROMPTS = {
     "zh": (
         "你是 CodeGraph Galaxy 裡的程式碼助理。一律以繁體中文回答。"

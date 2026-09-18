@@ -306,6 +306,10 @@ const I18N = {
     chat_project: 'Scope',
     chat_scope_all: 'All projects (follows Explorer)',
     chat_prov_test: 'Test',
+    trace_search: 'Search symbols',
+    trace_neighbors: 'Expand calls',
+    trace_code: 'Read code',
+    trace_blast: 'Impact',
     chat_welcome: '👋 Ask me about this codebase, e.g.:\n• Where is the entry point, and what runs at startup?\n• Which functions does login go through?\n• If I change payment, who breaks?\n• What does the auth module do?\n\nI look the code up for real — watch the lookup trace, then hit "Show on graph".',
     prov_title: 'Model Providers',
     prov_add: 'Add provider',
@@ -454,6 +458,10 @@ const I18N = {
     chat_project: '範圍',
     chat_scope_all: '全部專案（跟 Explorer 連動）',
     chat_prov_test: '測試',
+    trace_search: '搜尋符號',
+    trace_neighbors: '展開呼叫',
+    trace_code: '讀取程式碼',
+    trace_blast: '影響分析',
     chat_welcome: '👋 直接問這個 codebase，例如：\n• 進入點在哪？啟動時跑了什麼？\n• 登入會經過哪些函式？\n• 改了金流會炸到誰？\n• auth 模組在幹嘛？\n\n我會真的去查 code——看查碼過程，再按「在圖上顯示」。',
     prov_title: '模型服務商',
     prov_add: '新增服務商',
@@ -3063,6 +3071,16 @@ function chatAppendBubble(role, text) {
   return div;
 }
 
+function traceToolLabel(tool) {
+  const map = {
+    galaxy_search_symbols: '🔍 ' + t('trace_search'),
+    galaxy_get_neighbors: '🕸 ' + t('trace_neighbors'),
+    galaxy_get_code: '📄 ' + t('trace_code'),
+    galaxy_blast_radius: '💥 ' + t('trace_blast'),
+  };
+  return map[tool] || `🔍 ${tool}`;
+}
+
 function chatParseSseBlock(block) {
   let event = 'message';
   const dataLines = [];
@@ -3122,7 +3140,7 @@ function sendChatMessage(text) {
           const row = document.createElement('div');
           const tool = frame.data.strTool || frame.data.tool || 'tool';
           const summary = frame.data.strSummary || frame.data.summary || '';
-          row.textContent = `🔍 ${tool} — ${summary}`;
+          row.textContent = `${traceToolLabel(tool)} — ${summary}`;
           traceRows.appendChild(row);
         } else if (frame.event === 'chat_done' && frame.data) {
           finishChatAnswer(frame.data, steps, accumulated, aiDiv, traceRows, text);

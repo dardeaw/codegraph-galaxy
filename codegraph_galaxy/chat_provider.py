@@ -480,7 +480,11 @@ class GalaxyChatProvider:
             if strErr:
                 return {"error": strErr}, strErr, [], None
             vIds = [h["id"] for h in vHits if h.get("id")]
-            strNames = ", ".join(f"`{h['id']}`@{h.get('project', '?')}" for h in vHits[:8]) or "none"
+
+            def _disp(h: Dict[str, Any]) -> str:
+                return str(h.get("name") or h.get("qualified_name") or h.get("id") or "?")
+
+            strNames = "、".join(f"{_disp(h)}@{h.get('project', '?')}" for h in vHits[:6]) or "none"
             return vHits, f"命中 {len(vHits)} 個：{strNames}", vIds, None
         if strName in ("galaxy_get_neighbors", "galaxy_blast_radius"):
             strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx, vScope)

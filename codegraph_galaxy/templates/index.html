@@ -360,8 +360,8 @@
 </div>
 
 <!-- Copilot-style Chat Panel -->
-<div id="chat-panel" style="display:none; position:fixed; top:48px; right:12px; width:380px; max-width:92vw; height:calc(100vh - 120px); z-index:60; flex-direction:column; background:#0d1117; border:1px solid #30363d; border-radius:10px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.5); font-size:12px;">
-  <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #21262d;">
+<div id="chat-panel" style="display:none; position:fixed; top:48px; right:12px; width:380px; max-width:92vw; height:calc(100vh - 120px); min-width:280px; min-height:300px; z-index:60; flex-direction:column; background:#0d1117; border:1px solid #30363d; border-radius:10px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.5); font-size:12px; resize:both;">
+  <div id="chat-header" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #21262d; cursor:move; user-select:none;">
     <span id="lbl-chat-title" style="font-weight:600;">💬 Code Assistant</span>
     <button onclick="toggleChatPanel(false)" style="background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:14px;">✕</button>
   </div>

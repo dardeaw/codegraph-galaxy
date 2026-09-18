@@ -2590,6 +2590,66 @@ function renderChatScope() {
   }
 }
 
+function restoreChatPanelGeom() {
+  try {
+    const g = JSON.parse(localStorage.getItem('galaxy-chat-geom') || 'null');
+    const panel = document.getElementById('chat-panel');
+    if (!g || !panel) return;
+    if (g.w > 200) panel.style.width = `${g.w}px`;
+    if (g.h > 200) panel.style.height = `${g.h}px`;
+    if (typeof g.x === 'number' && typeof g.y === 'number') {
+      panel.style.left = `${g.x}px`;
+      panel.style.top = `${g.y}px`;
+      panel.style.right = 'auto';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function saveChatPanelGeom() {
+  try {
+    const panel = document.getElementById('chat-panel');
+    if (!panel || panel.style.display === 'none') return;
+    const r = panel.getBoundingClientRect();
+    localStorage.setItem('galaxy-chat-geom', JSON.stringify({
+      w: Math.round(r.width), h: Math.round(r.height),
+      x: Math.round(r.left), y: Math.round(r.top),
+    }));
+  } catch (e) { /* ignore */ }
+}
+
+function initChatPanelDrag() {
+  const panel = document.getElementById('chat-panel');
+  const header = document.getElementById('chat-header');
+  if (!panel || !header || header.dataset.dragBound) return;
+  header.dataset.dragBound = '1';
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest && e.target.closest('button')) return;
+    e.preventDefault();
+    const startX = e.clientX, startY = e.clientY;
+    const r = panel.getBoundingClientRect();
+    const baseX = r.left, baseY = r.top;
+    panel.style.left = `${baseX}px`;
+    panel.style.top = `${baseY}px`;
+    panel.style.right = 'auto';
+    const onMove = (ev) => {
+      const nx = Math.min(Math.max(0, baseX + ev.clientX - startX), window.innerWidth - 120);
+      const ny = Math.min(Math.max(0, baseY + ev.clientY - startY), window.innerHeight - 60);
+      panel.style.left = `${nx}px`;
+      panel.style.top = `${ny}px`;
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      saveChatPanelGeom();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  document.addEventListener('mouseup', () => {
+    if (panel.style.display !== 'none') saveChatPanelGeom();
+  });
+}
+
 function toggleProviderSettings(force) {
   const box = document.getElementById('chat-prov-settings');
   if (!box) return;
@@ -2682,6 +2742,8 @@ function toggleChatPanel(force) {
     renderChatChips();
     loadChatModels();
     renderChatScope();
+    restoreChatPanelGeom();
+    initChatPanelDrag();
     const inp = document.getElementById('chat-input');
     if (inp) {
       inp.focus();

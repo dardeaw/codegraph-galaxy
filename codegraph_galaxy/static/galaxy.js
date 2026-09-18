@@ -1010,6 +1010,8 @@ function updateFileLabels() {
     if (!n || n.kind !== 'file' || n.x === undefined) continue;
     const base = fileLabelName(n);
     if (!base || base === '__init__.py') continue;
+    // Focused node shows the pill instead — one node, one label, no duplicates.
+    if (typeof focusLabelNodeId !== 'undefined' && n.id === focusLabelNodeId) continue;
     seen.add(n.id);
     let div = fileLabelDivs.get(n.id);
     if (!div) {

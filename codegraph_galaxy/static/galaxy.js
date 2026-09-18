@@ -313,6 +313,7 @@ const I18N = {
     chat_show_graph: 'Show {n} on graph',
     chat_conn_fail: 'Connection failed. Is the backend running?',
     chat_no_nodes: 'Those nodes are not in the current graph view.',
+    chat_highlight_partial: 'Showing {shown}/{total} — the rest are outside the current view (load more projects or switch LOD).',
     chat_highlighted: 'Highlighted {n} node(s).',
     chat_tpl_entry: 'Find entry',
     chat_tpl_entry_p: 'Where is the entry point of this project? List the key startup files and functions.',
@@ -450,6 +451,7 @@ const I18N = {
     chat_show_graph: '在圖上顯示 {n} 個',
     chat_conn_fail: '連線失敗，後端有在跑嗎？',
     chat_no_nodes: '這些節點不在目前的圖上。',
+    chat_highlight_partial: '顯示 {shown}/{total}——其餘在目前視圖外（載入更多專案或切 LOD）。',
     chat_highlighted: '已標亮 {n} 個節點。',
     chat_tpl_entry: '找入口',
     chat_tpl_entry_p: '這個專案的進入點在哪？列出關鍵啟動檔案與函式。',
@@ -2884,20 +2886,42 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
 }
 
 function showChatHighlights(ids) {
-  if (!ids || !ids.length || typeof Graph === 'undefined' || !Graph.graphData) return;
-  const nodes = Graph.graphData().nodes || [];
-  const found = [];
+  if (!ids || !ids.length || typeof Graph === 'undefined' || !Graph || !Graph.graphData) return;
+  const data = Graph.graphData();
+  const nodes = data.nodes || [];
+  const links = data.links || [];
+  const byId = new Map();
+  for (const n of nodes) {
+    if (n && n.id) byId.set(n.id, n);
+  }
+  highlightNodes.clear();
+  highlightLinks.clear();
+  let shown = 0;
   for (const id of ids) {
-    const n = nodes.find((x) => x && x.id === id);
-    if (n) found.push(n);
+    if (byId.has(id)) {
+      highlightNodes.add(id);
+      shown++;
+    }
   }
-  if (!found.length) {
-    showToast(t('chat_no_nodes'));
-    return;
+  for (const l of links) {
+    const s = (l.source && l.source.id) || l.source;
+    const t = (l.target && l.target.id) || l.target;
+    if (highlightNodes.has(s) && highlightNodes.has(t)) highlightLinks.add(l);
   }
-  focusOnNode(found[0]);
-  try { openDrawer(found[0]); } catch (e) { /* drawer optional */ }
-  showToast(t('chat_highlighted', { n: found.length }));
+  Graph.nodeColor(Graph.nodeColor())
+    .linkColor(Graph.linkColor())
+    .linkWidth(Graph.linkWidth())
+    .linkDirectionalParticles(Graph.linkDirectionalParticles());
+  const first = ids.map((id) => byId.get(id)).find(Boolean);
+  if (first) {
+    focusOnNode(first);
+    try { openDrawer(first); } catch (e) { /* drawer optional */ }
+  }
+  if (shown < ids.length) {
+    showToast(t('chat_highlight_partial', { shown, total: ids.length }));
+  } else {
+    showToast(t('chat_highlighted', { n: shown }));
+  }
 }
 
 // Init

@@ -178,37 +178,43 @@ SYSTEM_PROMPT = (
     "You are a code assistant inside CodeGraph Galaxy. Answer in the user's language "
     "(Traditional Chinese if the user writes Traditional Chinese). "
     "Use the provided tools to look up the codebase — never invent symbols, files or line numbers. "
+    "galaxy_search_symbols searches ALL indexed projects unless a project is given; "
+    "its hits carry project names — pass that project into neighbors/code/blast_radius. "
     "Keep the final answer concise and reference node ids in backticks like `auth:login`."
 )
 
 TOOLS = [
     {"type": "function", "function": {
         "name": "galaxy_search_symbols",
-        "description": "Keyword-search symbols (function/class/method/file) by name across the indexed repo.",
+        "description": "Keyword-search symbols across indexed repos. Omit project to search ALL repos; each hit carries its project name.",
         "parameters": {"type": "object", "properties": {
             "keyword": {"type": "string", "description": "Substring to match against name/qualified_name/file_path."},
+            "project": {"type": "string", "description": "Optional: restrict to one project."},
             "limit": {"type": "integer", "description": "Max hits (1-20)."}},
             "required": ["keyword"]}}},
     {"type": "function", "function": {
         "name": "galaxy_get_neighbors",
-        "description": "Expand call-graph neighbors (callers + callees) around a node id.",
+        "description": "Expand call-graph neighbors (callers + callees) around a node id within one project.",
         "parameters": {"type": "object", "properties": {
             "node_id": {"type": "string"},
+            "project": {"type": "string", "description": "Project of the node (from the search hit)."},
             "depth": {"type": "integer", "description": "1 or 2."}},
             "required": ["node_id"]}}},
     {"type": "function", "function": {
         "name": "galaxy_get_code",
-        "description": "Read a source snippet by file path and line range (max 120 lines).",
+        "description": "Read a source snippet by file path and line range (max 120 lines) within one project.",
         "parameters": {"type": "object", "properties": {
             "file_path": {"type": "string"},
+            "project": {"type": "string", "description": "Project of the file (from the search hit)."},
             "start_line": {"type": "integer"},
             "end_line": {"type": "integer"}},
             "required": ["file_path"]}}},
     {"type": "function", "function": {
         "name": "galaxy_blast_radius",
-        "description": "Impact analysis: all nodes within N hops of a node id (who would break if it changes).",
+        "description": "Impact analysis: all nodes within N hops of a node id within one project.",
         "parameters": {"type": "object", "properties": {
             "node_id": {"type": "string"},
+            "project": {"type": "string", "description": "Project of the node (from the search hit)."},
             "depth": {"type": "integer", "description": "1 or 2."}},
             "required": ["node_id"]}}},
 ]
@@ -354,23 +360,94 @@ class GalaxyChatProvider:
         finally:
             oConn.close()
 
-    def _FnRunTool(self, strName: str, dicArgs: Dict[str, Any], strDb: str, strRepo: str) -> Tuple[Any, str, List[str]]:
-        """Returns (result_for_llm, trace_summary, highlight_ids)."""
+    def _FnResolveSingle(self, str_want: str = "", dic_ctx: Optional[Dict[str, Any]] = None) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
+        """Resolve one DB for single-project tools.
+
+        Priority: explicit arg → context project → single indexed repo.
+        Returns (db_path, repo_path, resolved_name, err_hint).
+        """
+        vIndexed = self._FnKnownIndexed()
+        if not vIndexed:
+            return None, None, None, "尚無已索引的專案，請先到庫管理 init"
+        for strCand in (str_want or "", str((dic_ctx or {}).get("strProject") or "")):
+            if not strCand or not self._fn_resolve_db:
+                continue
+            t = self._fn_resolve_db(strCand)
+            if t:
+                return t[0], t[1], strCand, ""
+            strHit, vClose = self._FnMatchProject(strCand, vIndexed)
+            if strHit and self._fn_resolve_db:
+                t = self._fn_resolve_db(strHit)
+                if t:
+                    return t[0], t[1], strHit, ""
+            if vClose:
+                return None, None, None, "專案「" + strCand + "」不明確，是指「" + "」或「".join(vClose) + "」嗎？"
+            return None, None, None, "找不到專案「" + strCand + "」。目前已索引：" + "、".join(vIndexed[:12])
+        if len(vIndexed) == 1 and self._fn_resolve_db:
+            t = self._fn_resolve_db(vIndexed[0])
+            if t:
+                return t[0], t[1], vIndexed[0], ""
+        return None, None, None, "需指定專案（目前已索引：" + "、".join(vIndexed[:12]) + "）"
+
+    def _FnSearchAll(self, strKeyword: str, nLimit: int, str_only_project: str = "") -> Tuple[List[Dict[str, Any]], str]:
+        """Fan-out keyword search across indexed DBs. Returns (hits, summary)."""
+        nLimit = max(1, min(MAX_SEARCH, int(nLimit or 8)))
+        vIndexed = self._FnKnownIndexed()
+        if str_only_project and self._fn_resolve_db:
+            t = self._fn_resolve_db(str_only_project)
+            if t:
+                vHits = self._FnSearch(t[0], strKeyword, nLimit)
+                for h in vHits:
+                    h["project"] = str_only_project
+                return vHits, ""
+            vIndexed = [n for n in vIndexed if _FnNormProject(n) == _FnNormProject(str_only_project)]
+            if not vIndexed:
+                return [], f"找不到專案「{str_only_project}」"
+        vAll: List[Dict[str, Any]] = []
+        nPerDb = max(3, min(6, nLimit // max(1, len(vIndexed))))
+        for strName in vIndexed:
+            if len(vAll) >= nLimit or not self._fn_resolve_db:
+                break
+            try:
+                t = self._fn_resolve_db(strName)
+                if not t:
+                    continue
+                for h in self._FnSearch(t[0], strKeyword, nPerDb):
+                    h["project"] = strName
+                    vAll.append(h)
+                    if len(vAll) >= nLimit:
+                        break
+            except Exception:
+                continue
+        return vAll, ""
+
+    def _FnRunTool(self, strName: str, dicArgs: Dict[str, Any], dicCtx: Dict[str, Any]) -> Tuple[Any, str, List[str], Optional[str]]:
+        """Returns (result_for_llm, trace_summary, highlight_ids, resolved_project)."""
         if strName == "galaxy_search_symbols":
-            vHits = self._FnSearch(strDb, str(dicArgs.get("keyword", "")), int(dicArgs.get("limit", 8) or 8))
+            vHits, strErr = self._FnSearchAll(str(dicArgs.get("keyword", "")),
+                                              int(dicArgs.get("limit", 8) or 8),
+                                              str(dicArgs.get("project", "") or ""))
+            if strErr:
+                return {"error": strErr}, strErr, [], None
             vIds = [h["id"] for h in vHits if h.get("id")]
-            strNames = ", ".join(f"`{h['id']}`" for h in vHits[:8]) or "none"
-            return vHits, f"命中 {len(vHits)} 個：{strNames}", vIds
+            strNames = ", ".join(f"`{h['id']}`@{h.get('project', '?')}" for h in vHits[:8]) or "none"
+            return vHits, f"命中 {len(vHits)} 個：{strNames}", vIds, None
         if strName in ("galaxy_get_neighbors", "galaxy_blast_radius"):
+            strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx)
+            if strErr:
+                return {"error": strErr}, strErr, [], None
             dicRes = self._FnHops(strDb, str(dicArgs.get("node_id", "")), int(dicArgs.get("depth", 1) or 1))
             vIds = [n["id"] for n in dicRes["nodes"] if n.get("id")]
-            return dicRes, f"展開 {dicRes['count']} 個相鄰節點", vIds
+            return dicRes, f"[{strProj}] 展開 {dicRes['count']} 個相鄰節點", vIds, strProj
         if strName == "galaxy_get_code":
+            strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx)
+            if strErr:
+                return {"error": strErr}, strErr, [], None
             nStart = max(1, int(dicArgs.get("start_line", 1) or 1))
             nEnd = min(nStart + MAX_CODE_LINES, int(dicArgs.get("end_line", nStart + 50) or (nStart + 50)))
             dicSnippet, _ = extract_code_snippet(strRepo, str(dicArgs.get("file_path", "")), nStart, nEnd)
-            return dicSnippet, f"讀取 {dicArgs.get('file_path')}:{nStart}-{nEnd}", []
-        return {"error": f"unknown tool {strName}"}, "未知工具", []
+            return dicSnippet, f"[{strProj}] 讀取 {dicArgs.get('file_path')}:{nStart}-{nEnd}", [], strProj
+        return {"error": f"unknown tool {strName}"}, "未知工具", [], None
 
     # ---------------- target repo ----------------
     def _FnKnownIndexed(self) -> List[str]:
@@ -398,38 +475,19 @@ class GalaxyChatProvider:
             return vClose[0], vClose
         return None, vClose
 
-    def _FnPickDb(self, dicContext: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-        """Returns (db_path, repo_path, hint, resolved_name). Never loops the user."""
-        vIndexed = self._FnKnownIndexed()
-        if not vIndexed:
-            return None, None, "尚無已索引的專案，請先到庫管理 init", None
-        strProject = str((dicContext or {}).get("strProject") or "")
-        if strProject and self._fn_resolve_db:
-            # 1. exact, 2. normalized, 3. fuzzy
-            t = self._fn_resolve_db(strProject)
-            if t:
-                return t[0], t[1], None, strProject
-            strHit, vClose = self._FnMatchProject(strProject, vIndexed)
-            if strHit and self._fn_resolve_db:
-                t = self._fn_resolve_db(strHit)
-                if t:
-                    return t[0], t[1], None, strHit
-            if vClose:
-                return None, None, "你是指「" + "」或「".join(vClose) + "」嗎？請說其中一個。", None
-            return None, None, "找不到專案「" + strProject + "」。目前已索引：" + "、".join(vIndexed[:12]), None
-        if len(vIndexed) == 1 and self._fn_resolve_db:
-            t = self._fn_resolve_db(vIndexed[0])
-            if t:
-                return t[0], t[1], None, vIndexed[0]
-        return None, None, "目前已索引：" + "、".join(vIndexed[:12]) + "。請說要用哪一個（直接打名字就行，不用加符號）。", None
-
-    # ---------------- agent loop ----------------
+    # ---------------- agent loop (no upfront gate: search fans out, tools resolve lazily) ----------------
     def _FnLoop(self, strMessage: str, dicContext: Dict[str, Any],
                 str_model: Optional[str] = None, str_provider: Optional[str] = None,
                 fnOnTrace=None) -> Tuple[str, List[Dict[str, Any]], List[str], Optional[str], Optional[str]]:
-        strDb, strRepo, strHint, strResolved = self._FnPickDb(dicContext or {})
-        if strHint:
-            return strHint, [], [], None, strResolved
+        dicCtx = dicContext or {}
+        vIndexed = self._FnKnownIndexed()
+        if not vIndexed:
+            return "尚無已索引的專案，請先到庫管理 init", [], [], None, None
+        # Seed memory from context project (validated, never blocks).
+        strResolved = None
+        strHit, _ = self._FnMatchProject(str(dicCtx.get("strProject") or ""), vIndexed)
+        if strHit:
+            strResolved = strHit
         vMessages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         for dicMsg in (dicContext or {}).get("vHistory") or []:
             if isinstance(dicMsg, dict) and dicMsg.get("role") in ("user", "assistant"):
@@ -452,7 +510,9 @@ class GalaxyChatProvider:
                 for dicCall in vCalls:
                     strName = str(dicCall.get("name") or "")
                     dicArgs = dicCall.get("args") or {}
-                    oResult, strSummary, vIds = self._FnRunTool(strName, dicArgs, strDb, strRepo)
+                    oResult, strSummary, vIds, strProj = self._FnRunTool(strName, dicArgs, dicCtx)
+                    if strProj:
+                        strResolved = strProj
                     dicStep = {"strTool": strName, "dicArgs": dicArgs, "strSummary": strSummary}
                     vTrace.append(dicStep)
                     if fnOnTrace:

@@ -68,6 +68,11 @@ Adapt visual density on the fly without overwhelming the screen:
 - **Chat Comfort**: Markdown answers with tables and code blocks, copy buttons, per-language system prompts (en-US / zh-TW), `Enter` to send / `Shift+Enter` for newline, draggable + resizable panel with memory.
 - **API**: `POST /api/chat`, `POST /api/chat/stream` (SSE), `GET /api/chat/node`, provider CRUD under `/api/chat/providers`. Backend env: `GALAXY_LLM_URL` / `GALAXY_LLM_MODEL`, or `GALAXY_LLM_BASE` / `GALAXY_LLM_KEY` / `GALAXY_LLM_CUSTOM_MODEL` for a remote endpoint.
 
+### 8. MCP-Native: Any Agent Can Query Your Code
+- The bundled CodeGraph indexer (1.6.0) ships a built-in MCP server — no extra package, it arrives with `npm install`.
+- One command wires it into 9 agents (Claude Code, Cursor, Codex CLI, opencode, Hermes Agent, Gemini CLI, Antigravity IDE, Kiro, GitHub Copilot): `codegraph install --yes --init` (agent wiring + index build in one shot).
+- One index, three consumers: the 3D galaxy, the AI Chat panel, and any MCP client — symbols, call paths, impact analysis, all served from the same `.codegraph/` database.
+
 ---
 
 ##  Cross-Platform Support

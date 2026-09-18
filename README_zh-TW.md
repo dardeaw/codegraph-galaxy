@@ -66,6 +66,11 @@
 - **對話體驗**：Markdown 回答（含表格與代碼塊）、複製鍵、中英雙語提示詞、`Enter` 送出 / `Shift+Enter` 換行，可拖可縮、位置記憶。
 - **API**：`POST /api/chat`、`POST /api/chat/stream` (SSE)、`GET /api/chat/node`，provider 增刪改查在 `/api/chat/providers`。後端環境變數：`GALAXY_LLM_URL` / `GALAXY_LLM_MODEL`，或遠端端點用 `GALAXY_LLM_BASE` / `GALAXY_LLM_KEY` / `GALAXY_LLM_CUSTOM_MODEL`。
 
+### 8. MCP 原生：所有 Agent 都能查你的 code
+- 內建的 CodeGraph indexer（1.6.0）自帶 MCP server —— `npm install` 就有了，不用另裝。
+- 一行指令接上 9 種 agent（Claude Code、Cursor、Codex CLI、opencode、Hermes Agent、Gemini CLI、Antigravity IDE、Kiro、GitHub Copilot）：`codegraph install --yes --init`（接線＋建庫一次搞定）。
+- 一份索引，三種用法：3D 星系、AI 對話、任何 MCP client —— 符號、呼叫鏈、影響分析，全都讀同一個 `.codegraph/` 資料庫。
+
 ---
 
 ##  跨平台支援

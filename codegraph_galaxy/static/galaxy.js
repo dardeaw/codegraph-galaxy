@@ -2749,11 +2749,15 @@ let provFetchedModels = [];
 
 function provTypes() {
   return [
-    { id: 'ollama', label: 'Ollama local', base: 'http://127.0.0.1:11434', key: '', urlMode: 'edit', keyMode: 'hide' },
-    { id: 'llamacpp', label: 'llama.cpp server', base: 'http://172.22.20.125:8080/v1', key: 'EMPTY', urlMode: 'edit', keyMode: 'hide' },
-    { id: 'openai', label: 'OpenAI', base: 'https://api.openai.com/v1', key: '', urlMode: 'fixed', keyMode: 'require' },
-    { id: 'deepseek', label: 'DeepSeek', base: 'https://api.deepseek.com/v1', key: '', urlMode: 'fixed', keyMode: 'require' },
-    { id: 'custom', label: 'Custom URL', base: '', urlMode: 'edit', keyMode: 'optional' },
+    { id: 'ollama', label: 'Ollama local', base: 'http://127.0.0.1:11434', key: '', urlMode: 'edit', keyMode: 'hide', suggest: [] },
+    { id: 'llamacpp', label: 'llama.cpp server', base: 'http://172.22.20.125:8080/v1', key: 'EMPTY', urlMode: 'edit', keyMode: 'hide', suggest: [] },
+    { id: 'openai', label: 'OpenAI', base: 'https://api.openai.com/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['gpt-4o-mini', 'gpt-4o'] },
+    { id: 'deepseek', label: 'DeepSeek', base: 'https://api.deepseek.com/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['deepseek-chat', 'deepseek-reasoner'] },
+    { id: 'gemini', label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai/', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['gemini-2.0-flash', 'gemini-1.5-flash'] },
+    { id: 'groq', label: 'Groq (Llama)', base: 'https://api.groq.com/openai/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] },
+    { id: 'openrouter', label: 'OpenRouter (Claude/Gemini/Llama)', base: 'https://openrouter.ai/api/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['anthropic/claude-3.5-sonnet', 'google/gemini-2.0-flash-001', 'meta-llama/llama-3.3-70b-instruct'] },
+    { id: 'grok', label: 'xAI Grok', base: 'https://api.x.ai/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['grok-3', 'grok-3-mini'] },
+    { id: 'custom', label: 'Custom URL', base: '', urlMode: 'edit', keyMode: 'optional', suggest: [] },
   ];
 }
 
@@ -2804,7 +2808,7 @@ function selectProvType(id) {
   set('chat-prov-key', t.key || '');
   const keyLabel = document.getElementById('lbl-prov-f-key');
   if (keyLabel) keyLabel.textContent = t('prov_f_key') + (t.keyMode === 'require' ? ' *' : '');
-  renderProvModelList([]);
+  renderProvModelList(t.suggest || []);
   const msg = document.getElementById('chat-prov-msg');
   if (msg) msg.textContent = '';
   if (t.keyMode !== 'require') fetchProvModels();

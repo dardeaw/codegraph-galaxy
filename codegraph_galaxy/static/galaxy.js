@@ -2649,17 +2649,54 @@ function initChatPanelDrag() {
     if (panel.style.display !== 'none') saveChatPanelGeom();
   });
   const grip = document.getElementById('chat-resize');
-  if (grip && !grip.dataset.bound) {
-    grip.dataset.bound = '1';
-    grip.addEventListener('mousedown', (e) => {
+  if (grip) grip.style.display = 'none';
+  initChatPanelEdges(panel);
+}
+
+function initChatPanelEdges(panel) {
+  if (!panel || panel.dataset.edgesBound) return;
+  panel.dataset.edgesBound = '1';
+  const zones = [
+    { keys: 'n', cursor: 'ns-resize', css: 'top:-4px;left:10px;right:10px;height:8px;' },
+    { keys: 's', cursor: 'ns-resize', css: 'bottom:-4px;left:10px;right:10px;height:8px;' },
+    { keys: 'w', cursor: 'ew-resize', css: 'left:-4px;top:10px;bottom:10px;width:8px;' },
+    { keys: 'e', cursor: 'ew-resize', css: 'right:-4px;top:10px;bottom:10px;width:8px;' },
+    { keys: 'nw', cursor: 'nwse-resize', css: 'left:-5px;top:-5px;width:12px;height:12px;' },
+    { keys: 'ne', cursor: 'nesw-resize', css: 'right:-5px;top:-5px;width:12px;height:12px;' },
+    { keys: 'sw', cursor: 'nesw-resize', css: 'left:-5px;bottom:-5px;width:12px;height:12px;' },
+    { keys: 'se', cursor: 'nwse-resize', css: 'right:-5px;bottom:-5px;width:12px;height:12px;' },
+  ];
+  for (const z of zones) {
+    const el = document.createElement('div');
+    el.style.cssText = `position:absolute;${z.css}cursor:${z.cursor};z-index:5;`;
+    el.addEventListener('mousedown', (e) => {
       e.preventDefault();
       e.stopPropagation();
       const startX = e.clientX, startY = e.clientY;
       const r = panel.getBoundingClientRect();
-      const baseW = r.width, baseH = r.height;
+      const base = { l: r.left, t: r.top, w: r.width, h: r.height };
+      panel.style.left = `${base.l}px`;
+      panel.style.top = `${base.t}px`;
+      panel.style.right = 'auto';
+      panel.style.width = `${base.w}px`;
+      panel.style.height = `${base.h}px`;
       const onMove = (ev) => {
-        panel.style.width = `${Math.min(Math.max(280, baseW + ev.clientX - startX), window.innerWidth - 24)}px`;
-        panel.style.height = `${Math.min(Math.max(300, baseH + ev.clientY - startY), window.innerHeight - 24)}px`;
+        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        let l = base.l, t = base.t, w = base.w, h = base.h;
+        if (z.keys.includes('e')) w = base.w + dx;
+        if (z.keys.includes('s')) h = base.h + dy;
+        if (z.keys.includes('w')) { w = base.w - dx; l = base.l + dx; }
+        if (z.keys.includes('n')) { h = base.h - dy; t = base.t + dy; }
+        if (w < 280) { if (z.keys.includes('w')) l -= 280 - w; w = 280; }
+        if (h < 300) { if (z.keys.includes('n')) t -= 300 - h; h = 300; }
+        w = Math.min(w, window.innerWidth - 24);
+        h = Math.min(h, window.innerHeight - 24);
+        l = Math.min(Math.max(0, l), window.innerWidth - 120);
+        t = Math.min(Math.max(0, t), window.innerHeight - 60);
+        panel.style.left = `${l}px`;
+        panel.style.top = `${t}px`;
+        panel.style.width = `${w}px`;
+        panel.style.height = `${h}px`;
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);
@@ -2669,6 +2706,7 @@ function initChatPanelDrag() {
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
+    panel.appendChild(el);
   }
 }
 
@@ -2908,9 +2946,95 @@ function sendChatMessage(text) {
   }
 }
 
+// Pure markdown renderer (zero deps, XSS-safe): headings, tables, fenced code,
+// lists, hr, bold, inline code, links. Streaming uses plain text; final render
+// goes through here.
+function chatRenderMarkdown(src) {
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const codes = [];
+  let text = String(src || '').replace(/```(\w*)\n([\s\S]*?)(```|$)/g, (m, lang, code) => {
+    codes.push({ lang: (lang || '').trim(), code: code.replace(/\n$/, '') });
+    return `\u0000CODE${codes.length - 1}\u0000`;
+  });
+  text = esc(text);
+  const inline = (s) => s
+    .replace(/`([^`\n]+)`/g, (m, c) => `<code style="background:#161b22; border:1px solid #30363d; border-radius:4px; padding:0 4px;">${c}</code>`)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener" style="color:#58a6ff;">$1</a>');
+  const lines = text.split('\n');
+  let html = '';
+  let i = 0;
+  const isSep = (s) => /^\s*\|?[\s:|\-]+\|?\s*$/.test(s) && s.includes('-');
+  const splitRow = (s) => {
+    let r = s.trim();
+    if (r.startsWith('|')) r = r.slice(1);
+    if (r.endsWith('|')) r = r.slice(0, -1);
+    return r.split('|').map((c) => c.trim());
+  };
+  while (i < lines.length) {
+    const line = lines[i];
+    const t = line.trim();
+    if (!t) { i++; continue; }
+    const codePh = t.match(/^\u0000CODE(\d+)\u0000$/);
+    if (codePh) {
+      const c = codes[parseInt(codePh[1], 10)];
+      html += `<pre style="background:#010409; border:1px solid #30363d; border-radius:6px; padding:8px; overflow-x:auto; font-size:11px;"><code>${esc(c.code)}</code></pre>`;
+      i++;
+      continue;
+    }
+    const h = t.match(/^(#{1,4})\s+(.*)$/);
+    if (h) {
+      const lv = h[1].length;
+      html += `<div style="font-weight:700; font-size:${15 - lv}px; margin:6px 0 2px;">${inline(h[2])}</div>`;
+      i++;
+      continue;
+    }
+    if (/^(-{3,}|\*{3,})\s*$/.test(t)) {
+      html += '<hr style="border:none; border-top:1px solid #30363d; margin:6px 0;" />';
+      i++;
+      continue;
+    }
+    if (t.includes('|') && i + 1 < lines.length && isSep(lines[i + 1])) {
+      const head = splitRow(t);
+      html += '<table style="border-collapse:collapse; margin:4px 0; font-size:11px;"><thead><tr>'
+        + head.map((c) => `<th style="border:1px solid #30363d; padding:3px 8px; background:#161b22;">${inline(c)}</th>`).join('')
+        + '</tr></thead><tbody>';
+      i += 2;
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
+        html += '<tr>' + splitRow(lines[i]).map((c) => `<td style="border:1px solid #30363d; padding:3px 8px;">${inline(c)}</td>`).join('') + '</tr>';
+        i++;
+      }
+      html += '</tbody></table>';
+      continue;
+    }
+    const lm = t.match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
+    if (lm) {
+      const ordered = /^\d/.test(lm[2]);
+      const tag = ordered ? 'ol' : 'ul';
+      html += `<${tag} style="margin:2px 0 2px 18px; padding:0;">`;
+      while (i < lines.length) {
+        const m2 = lines[i].trim().match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
+        if (!m2) break;
+        html += `<li>${inline(m2[3])}</li>`;
+        i++;
+      }
+      html += `</${tag}>`;
+      continue;
+    }
+    html += `<div style="margin:2px 0;">${inline(t)}</div>`;
+    i++;
+  }
+  return html.replace(/\u0000CODE(\d+)\u0000/g, (m, n) => {
+    const c = codes[parseInt(n, 10)];
+    return `<pre style="background:#010409; border:1px solid #30363d; border-radius:6px; padding:8px; overflow-x:auto; font-size:11px;"><code>${esc(c ? c.code : '')}</code></pre>`;
+  });
+}
+
 function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   const reply = (done && done.strReply) || streamed || '';
-  aiDiv.textContent = reply;
+  aiDiv.innerHTML = chatRenderMarkdown(reply);
   if (done && done.strProject) setChatProject(done.strProject);
   const highlights = (done && done.vHighlights) || [];
   const trace = (done && done.vTrace) || steps;

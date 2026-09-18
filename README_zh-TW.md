@@ -8,7 +8,8 @@
 [English](README.md) | [繁體中文](README_zh-TW.md)
 
 ---
-<img width="1408" height="866" alt="image" src="https://github.com/user-attachments/assets/48f97268-3f3b-4b94-81bc-6d6f8097eeac" />
+<img width="1132" height="751" alt="image" src="https://github.com/user-attachments/assets/8540a7c5-910c-43ad-bf78-1954142e1ddb" />
+
 ##  為什麼需要 Code Graph Galaxy？
 
 隨著軟體專案規模日益龐大，跨模組呼叫鏈、跨專案依賴關係以及未被建庫的異動檔案，若僅依靠純文字搜尋或靜態平面架構圖，往往難以綜觀全局。

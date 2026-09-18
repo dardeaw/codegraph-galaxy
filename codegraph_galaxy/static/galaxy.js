@@ -2098,8 +2098,9 @@ function changeLOD(mode) {
   loadRootGraph();
 }
 
-function focusOnNode(node) {
-  if (!node || node.x === undefined) return;
+const focusSettle = { timer: null };
+
+function flyToNode(node) {
   const distance = 80;
   const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
   Graph.cameraPosition(
@@ -2107,8 +2108,31 @@ function focusOnNode(node) {
     { x: node.x || 0, y: node.y || 0, z: node.z || 0 },
     1200
   );
+}
+
+function focusOnNode(node) {
+  if (!node || node.x === undefined) return;
+  flyToNode(node);
   showFocusLabelNode(node);
   if (node && node.id) lightFullChain(node, ++focusChainToken);
+  settleFocus(node.id, node.x, node.y, node.z, 0);
+}
+
+// The force layout may still be settling (notably right after load): if the
+// target drifted while the camera was flying, re-aim — up to 3 corrections.
+function settleFocus(id, px, py, pz, round) {
+  if (focusSettle.timer) { clearTimeout(focusSettle.timer); focusSettle.timer = null; }
+  if (round >= 3) return;
+  focusSettle.timer = setTimeout(() => {
+    focusSettle.timer = null;
+    if (typeof focusLabelNodeId !== 'undefined' && focusLabelNodeId !== id) return;
+    const live = (typeof findGraphNode === 'function') ? findGraphNode(id) : null;
+    if (!live || live.x === undefined) return;
+    if (Math.hypot(live.x - px, live.y - py, live.z - pz) > 20) {
+      flyToNode(live);
+      settleFocus(id, live.x, live.y, live.z, round + 1);
+    }
+  }, 1300);
 }
 
 // Open Inspector for Nodes/Files

@@ -112,6 +112,7 @@ Open your browser at `http://localhost:5001`.
 npm install
 npm start
 ```
+`npm install` pulls the pinned CodeGraph indexer (no separate CLI install) and `npm start` launches the desktop app. AI Chat needs a local model (Ollama) or a configured provider — see section 7.
 
 ---
 

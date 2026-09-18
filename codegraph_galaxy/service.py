@@ -25,6 +25,21 @@ def _project_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _candidate_roots() -> List[str]:
+    """Directories that may hold node_modules with the bundled CLI.
+
+    Source checkout / `npm start`: the repo root. Packaged desktop app:
+    backend runs from resources/ while asarUnpack puts node_modules under
+    resources/app.asar.unpacked/.
+    """
+    root = _project_root()
+    v_roots = [root]
+    str_unpacked = os.path.join(root, "app.asar.unpacked")
+    if str_unpacked not in v_roots:
+        v_roots.append(str_unpacked)
+    return v_roots
+
+
 def _platform_tag() -> Optional[str]:
     """npm platform-arch tag, e.g. 'win32-x64' (None when unrecognized)."""
     system_map = {"windows": "win32", "darwin": "darwin", "linux": "linux"}
@@ -44,21 +59,21 @@ def resolve_codegraph() -> Tuple[List[str], str, Optional[str]]:
     or ``none``. The prefix is prepended to every CLI invocation so no
     caller needs to know where the binary lives.
     """
-    root = _project_root()
     tag = _platform_tag()
     if tag:
-        pkg = os.path.join(root, "node_modules", "@colbymchenry", f"codegraph-{tag}")
-        # Verified layout of the platform package (win32-x64 1.6.0):
-        # self-contained node.exe + lib/dist/bin/codegraph.js — no shell,
-        # no system node required.
-        node_exe = os.path.join(pkg, "node.exe")
-        entry_js = os.path.join(pkg, "lib", "dist", "bin", "codegraph.js")
-        if os.path.isfile(node_exe) and os.path.isfile(entry_js):
-            return [node_exe, entry_js], "bundled", pkg
-        # POSIX npm bin (shebang; needs node on PATH at exec time).
-        shim = os.path.join(root, "node_modules", ".bin", "codegraph")
-        if os.path.isfile(shim):
-            return [shim], "bundled", shim
+        for root in _candidate_roots():
+            pkg = os.path.join(root, "node_modules", "@colbymchenry", f"codegraph-{tag}")
+            # Verified layout of the platform package (win32-x64 1.6.0):
+            # self-contained node.exe + lib/dist/bin/codegraph.js — no shell,
+            # no system node required.
+            node_exe = os.path.join(pkg, "node.exe")
+            entry_js = os.path.join(pkg, "lib", "dist", "bin", "codegraph.js")
+            if os.path.isfile(node_exe) and os.path.isfile(entry_js):
+                return [node_exe, entry_js], "bundled", pkg
+            # POSIX npm bin (shebang; needs node on PATH at exec time).
+            shim = os.path.join(root, "node_modules", ".bin", "codegraph")
+            if os.path.isfile(shim):
+                return [shim], "bundled", shim
 
     found = shutil.which("codegraph")
     if found:

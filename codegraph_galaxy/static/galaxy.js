@@ -310,6 +310,10 @@ const I18N = {
     trace_neighbors: 'Expand calls',
     trace_code: 'Read code',
     trace_blast: 'Impact',
+    chat_copy: 'Copy',
+    chat_copied: 'Copied.',
+    chat_locating: 'Locating node… (opening layers as needed)',
+    chat_lod_escalated: 'Switched to Standard mode to show function nodes.',
     chat_welcome: '👋 Ask me about this codebase, e.g.:\n• Where is the entry point, and what runs at startup?\n• Which functions does login go through?\n• If I change payment, who breaks?\n• What does the auth module do?\n\nI look the code up for real — watch the lookup trace, then hit "Show on graph".',
     prov_title: 'Model Providers',
     prov_add: 'Add provider',
@@ -462,6 +466,10 @@ const I18N = {
     trace_neighbors: '展開呼叫',
     trace_code: '讀取程式碼',
     trace_blast: '影響分析',
+    chat_copy: '複製',
+    chat_copied: '已複製。',
+    chat_locating: '定位節點中…（自動開啟所需圖層）',
+    chat_lod_escalated: '已自動切到 Standard 模式以顯示 function 節點。',
     chat_welcome: '👋 直接問這個 codebase，例如：\n• 進入點在哪？啟動時跑了什麼？\n• 登入會經過哪些函式？\n• 改了金流會炸到誰？\n• auth 模組在幹嘛？\n\n我會真的去查 code——看查碼過程，再按「在圖上顯示」。',
     prov_title: '模型服務商',
     prov_add: '新增服務商',
@@ -3065,10 +3073,56 @@ function chatAppendBubble(role, text) {
   div.style.cssText = role === 'user'
     ? 'align-self:flex-end; max-width:92%; background:#1f6feb33; border:1px solid #1f6feb55; border-radius:8px; padding:6px 10px; white-space:pre-wrap; word-break:break-word;'
     : 'align-self:flex-start; max-width:94%; background:#161b22; border:1px solid #30363d; border-radius:8px; padding:6px 10px; white-space:pre-wrap; word-break:break-word;';
-  div.textContent = text;
+  div.dataset.raw = text || '';
+  const span = document.createElement('span');
+  span.textContent = text;
+  div.appendChild(span);
+  div._span = span;
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = '📋';
+  copyBtn.title = t('chat_copy');
+  copyBtn.style.cssText = 'float:right; background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:var(--cfs-sm); padding:0 0 0 6px;';
+  copyBtn.onclick = (e) => {
+    e.stopPropagation();
+    copyChatText(div.dataset.raw || '', copyBtn);
+  };
+  div.appendChild(copyBtn);
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
   return div;
+}
+
+function copyChatText(text, btn) {
+  const done = () => {
+    showToast(t('chat_copied'));
+    if (btn) {
+      const old = btn.textContent;
+      btn.textContent = '✅';
+      setTimeout(() => { btn.textContent = old; }, 1200);
+    }
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => copyChatFallback(text, done));
+    } else {
+      copyChatFallback(text, done);
+    }
+  } catch (e) {
+    copyChatFallback(text, done);
+  }
+}
+
+function copyChatFallback(text, done) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed; opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    done();
+  } catch (e) { /* clipboard unavailable */ }
 }
 
 function traceToolLabel(tool) {
@@ -3134,7 +3188,8 @@ function sendChatMessage(text) {
         if (!frame) continue;
         if (frame.event === 'chat_delta' && frame.data && frame.data.strDelta) {
           accumulated += frame.data.strDelta;
-          aiDiv.textContent = accumulated;
+          if (aiDiv._span) aiDiv._span.textContent = accumulated;
+          else aiDiv.textContent = accumulated;
         } else if (frame.event === 'chat_trace' && frame.data) {
           steps.push(frame.data);
           const row = document.createElement('div');
@@ -3146,7 +3201,10 @@ function sendChatMessage(text) {
         } else if (frame.event === 'chat_done' && frame.data) {
           finishChatAnswer(frame.data, steps, accumulated, aiDiv, traceRows, text);
         } else if (frame.event === 'error') {
-          aiDiv.textContent = '⚠️ ' + ((frame.data && (frame.data.strError || frame.data.message)) || 'chat failed');
+          const msg = '⚠️ ' + ((frame.data && (frame.data.strError || frame.data.message)) || 'chat failed');
+          if (aiDiv._span) aiDiv._span.textContent = msg;
+          else aiDiv.textContent = msg;
+          aiDiv.dataset.raw = msg;
           chatBusy = false;
         }
       }
@@ -3155,17 +3213,26 @@ function sendChatMessage(text) {
     };
     xhr.onload = () => {
       if (xhr.status !== 200 && chatBusy) {
-        aiDiv.textContent = `⚠️ server error (${xhr.status})`;
+        const msg = `⚠️ server error (${xhr.status})`;
+        if (aiDiv._span) aiDiv._span.textContent = msg;
+        else aiDiv.textContent = msg;
+        aiDiv.dataset.raw = msg;
         chatBusy = false;
       }
     };
     xhr.onerror = () => {
-      aiDiv.textContent = '⚠️ ' + t('chat_conn_fail');
+      const msg = '⚠️ ' + t('chat_conn_fail');
+      if (aiDiv._span) aiDiv._span.textContent = msg;
+      else aiDiv.textContent = msg;
+      aiDiv.dataset.raw = msg;
       chatBusy = false;
     };
     xhr.send(JSON.stringify(payload));
   } catch (err) {
-    aiDiv.textContent = '⚠️ ' + String((err && err.message) || err);
+    const msg = '⚠️ ' + String((err && err.message) || err);
+    if (aiDiv._span) aiDiv._span.textContent = msg;
+    else aiDiv.textContent = msg;
+    aiDiv.dataset.raw = msg;
     chatBusy = false;
   }
 }
@@ -3258,7 +3325,17 @@ function chatRenderMarkdown(src) {
 
 function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   const reply = (done && done.strReply) || streamed || '';
+  aiDiv.dataset.raw = reply;
   aiDiv.innerHTML = chatRenderMarkdown(reply);
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = '📋';
+  copyBtn.title = t('chat_copy');
+  copyBtn.style.cssText = 'float:right; background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:var(--cfs-sm); padding:0 0 0 6px;';
+  copyBtn.onclick = (e) => {
+    e.stopPropagation();
+    copyChatText(aiDiv.dataset.raw || '', copyBtn);
+  };
+  aiDiv.appendChild(copyBtn);
   if (done && done.strProject) setChatProject(done.strProject);
   const highlights = (done && done.vHighlights) || [];
   const trace = (done && done.vTrace) || steps;
@@ -3297,14 +3374,77 @@ function traceNodeColor(kind) {
 }
 
 function locateChatNode(id) {
-  if (typeof Graph === 'undefined' || !Graph || !Graph.graphData) return;
-  const n = (Graph.graphData().nodes || []).find((x) => x && x.id === id);
-  if (n) {
-    focusOnNode(n);
-    try { openDrawer(n); } catch (e) { /* drawer optional */ }
-  } else {
+  const meta = (typeof chatNodeIndex !== 'undefined' && chatNodeIndex[id]) || {};
+  ensureChatNodeVisible(id, meta.project || '').then((n) => {
+    if (n) {
+      focusOnNode(n);
+      try { openDrawer(n); } catch (e) { /* drawer optional */ }
+    } else {
+      showToast(t('chat_no_nodes'));
+    }
+  }).catch(() => {
     showToast(t('chat_no_nodes'));
+  });
+}
+
+// id → {kind, project} from trace chips (powers locate without extra queries)
+let chatNodeIndex = {};
+
+function findGraphNode(id) {
+  if (typeof Graph === 'undefined' || !Graph || !Graph.graphData) return null;
+  return ((Graph.graphData().nodes) || []).find((x) => x && x.id === id) || null;
+}
+
+function setChatLOD(mode) {
+  currentLOD = mode;
+  try { localStorage.setItem('codegraph_lod_mode', mode); } catch (e) { /* ignore */ }
+  document.querySelectorAll('.lod-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.lod === mode);
+  });
+  updateLegendUI();
+  loadRootGraph();
+}
+
+async function ensureChatNodeVisible(id, projectHint) {
+  let n = findGraphNode(id);
+  if (n) return n;
+  showToast(t('chat_locating'));
+  let info = null;
+  try {
+    const res = await fetch(`/api/chat/node?id=${encodeURIComponent(id)}&project=${encodeURIComponent(projectHint || '')}`);
+    info = await res.json();
+  } catch (e) { /* backend unreachable */ }
+  if (!info || !info.found) return null;
+  // 1. project must be selected (tree rebuilds itself from the set)
+  if (!selectedProjects.has(info.project)) {
+    selectedProjects.add(info.project);
   }
+  // 2. kind layer on (frontend filter)
+  let unhidden = false;
+  for (const h of Array.from(hiddenKinds)) {
+    try {
+      if (getRelatedKinds(h).includes(info.kind)) {
+        hiddenKinds.delete(h);
+        unhidden = true;
+      }
+    } catch (e) { /* ignore */ }
+  }
+  // 3. backend arch LOD drops function-family kinds entirely → escalate once
+  const backendHidden = ['function', 'method', 'route', 'import', 'variable', 'field', 'constant', 'property'];
+  if (currentLOD === 'arch' && backendHidden.includes(info.kind)) {
+    showToast(t('chat_lod_escalated'));
+    setChatLOD('standard');
+  } else {
+    if (unhidden) updateLegendUI();
+    loadRootGraph();
+  }
+  // 4. poll for arrival (reload is async)
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    n = findGraphNode(id);
+    if (n) return n;
+  }
+  return null;
 }
 
 function appendTraceNodeChips(box, nodes) {
@@ -3313,6 +3453,7 @@ function appendTraceNodeChips(box, nodes) {
   wrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:4px; margin:2px 0 4px 14px;';
   for (const nd of nodes.slice(0, 8)) {
     if (!nd || !nd.id) continue;
+    chatNodeIndex[nd.id] = { kind: nd.kind || '', project: nd.project || '' };
     const chip = document.createElement('button');
     const color = traceNodeColor(nd.kind);
     chip.style.cssText = `border:1px solid ${color}66; background:${color}18; color:${color}; border-radius:999px; padding:2px 9px; font-size:var(--cfs-sm); cursor:pointer; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;`;
@@ -3330,9 +3471,16 @@ function appendTraceNodeChips(box, nodes) {
   box.appendChild(wrap);
 }
 
-function showChatHighlights(ids) {
+async function showChatHighlights(ids) {
   if (!ids || !ids.length || typeof Graph === 'undefined' || !Graph || !Graph.graphData) return;
-  const data = Graph.graphData();
+  const missing = ids.filter((id) => !findGraphNode(id));
+  if (missing.length) {
+    const meta = (typeof chatNodeIndex !== 'undefined' && chatNodeIndex[missing[0]]) || {};
+    showToast(t('chat_locating'));
+    await ensureChatNodeVisible(missing[0], meta.project || '');
+  }
+  const doHighlight = () => {
+    const data = Graph.graphData();
   const nodes = data.nodes || [];
   const links = data.links || [];
   const byId = new Map();
@@ -3367,6 +3515,8 @@ function showChatHighlights(ids) {
   } else {
     showToast(t('chat_highlighted', { n: shown }));
   }
+  };
+  doHighlight();
 }
 
 // Init

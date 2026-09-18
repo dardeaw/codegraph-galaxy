@@ -291,6 +291,46 @@ def vProviders_models(dicList: Dict[str, Any], str_id: str) -> List[str]:
     return []
 
 
+def FnFindNode(str_node_id: str, str_project: str = "",
+               fn_resolve_db=None, fn_list_projects=None) -> Dict[str, Any]:
+    """Locate one node across indexed DBs (for 3D fly-to).
+
+    Returns {found, id, name, kind, project, file_path, start_line}.
+    Hinted project first, then all indexed.
+    """
+    if not str_node_id:
+        return {"found": False}
+    vNames: List[str] = []
+    try:
+        vNames = list(fn_list_projects() or []) if fn_list_projects else []
+    except Exception:
+        vNames = []
+    vOrdered = []
+    if str_project:
+        vOrdered = [n for n in vNames if _FnNormProject(n) == _FnNormProject(str_project)]
+    vOrdered += [n for n in vNames if n not in vOrdered]
+    for strName in vOrdered:
+        try:
+            t = fn_resolve_db(strName) if fn_resolve_db else None
+            if not t:
+                continue
+            oConn = _connect_db(t[0])
+            try:
+                oCur = oConn.cursor()
+                r = oCur.execute(
+                    "SELECT id, name, kind, file_path, start_line, qualified_name FROM nodes "
+                    "WHERE id = ? LIMIT 1", (str_node_id,)).fetchone()
+                if r:
+                    return {"found": True, "id": r["id"], "name": r["name"],
+                            "kind": r["kind"], "project": strName,
+                            "file_path": r["file_path"], "start_line": r["start_line"]}
+            finally:
+                oConn.close()
+        except Exception:
+            continue
+    return {"found": False}
+
+
 class GalaxyChatProvider:
     """Local-LLM chat provider. fn_resolve_db(project) -> (db_path, repo_path) | None."""
     def __init__(self, fn_resolve_db: Optional[Callable[[str], Optional[Tuple[str, str]]]] = None,

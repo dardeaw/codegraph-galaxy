@@ -7,7 +7,7 @@ from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
-from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels
+from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
 def resolve_template_path(pkg_dir: str) -> Optional[str]:
     """Find index.html template file across common candidate locations."""
@@ -163,7 +163,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         """CLI availability for the repo-manager connection indicator."""
         return jsonify(get_codegraph_status())
 
-    def _make_chat_provider() -> GalaxyChatProvider:
+    def _repo_helpers():
         def fn_resolve_db(name: str):
             roots = get_search_roots(search_roots)
             repos = scan_repositories(roots)
@@ -177,7 +177,17 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             roots = get_search_roots(search_roots)
             return sorted(scan_repositories(roots).keys())
 
+        return fn_resolve_db, fn_list_projects
+
+    def _make_chat_provider() -> GalaxyChatProvider:
+        fn_resolve_db, fn_list_projects = _repo_helpers()
         return GalaxyChatProvider(fn_resolve_db=fn_resolve_db, fn_list_projects=fn_list_projects)
+
+    @app.route("/api/chat/node", methods=["GET"])
+    def chat_find_node():
+        fn_resolve_db, fn_list_projects = _repo_helpers()
+        return jsonify(FnFindNode(request.args.get("id", ""), request.args.get("project", ""),
+                                  fn_resolve_db, fn_list_projects))
 
     @app.route("/api/chat/models", methods=["GET"])
     def chat_models():

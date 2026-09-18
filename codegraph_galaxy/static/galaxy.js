@@ -869,10 +869,10 @@ function layoutGraphViewport() {
     const rightCut = Math.round(drawerViewportCut());
     const w = Math.max(320, window.innerWidth - leftCut - rightCut);
     Graph.width(w);
-    try {
-      const cv = document.querySelector('#3d-graph canvas');
-      if (cv) cv.style.marginLeft = `${leftCut}px`;
-    } catch (e) { /* ignore */ }
+    // NOTE: never querySelector('#3d-graph ...') — a leading-digit id is an
+    // invalid CSS selector and throws (that silently killed the offset before).
+    const holder = document.getElementById('3d-graph');
+    if (holder) holder.style.paddingLeft = `${leftCut}px`;
     graphOriginX = leftCut;
     graphVisibleRight = window.innerWidth - rightCut;
   } catch (e) { /* ignore */ }

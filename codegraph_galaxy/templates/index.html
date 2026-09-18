@@ -34,6 +34,7 @@
   <div class="toolbar-right">
     <button class="tool-btn" id="btn-chat" onclick="toggleChatPanel()" title="Ask AI about this codebase" style="color:#bc8cff; border-color:#bc8cff55;">✦ <span id="lbl-btn-chat">AI Chat</span></button>
     <button class="tool-btn" id="btn-lang" onclick="toggleLanguage()">Language: EN</button>
+    <button class="tool-btn" id="btn-help" onclick="toggleHelp(true)" title="Help" style="padding:4px 10px;">?</button>
     <div class="stats-badge">
       <span id="stats-nodes">0 nodes</span>
       <span id="stats-edges">0 links</span>
@@ -380,6 +381,17 @@
     <textarea id="chat-input" rows="2" placeholder="Ask anything about the code… (Enter to send, Shift+Enter for newline)" autocomplete="off" style="flex:1; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:var(--cfs); resize:vertical; font-family:inherit;"></textarea>
     <button id="chat-send" onclick="sendChatFromInput()" style="background:#238636; border:1px solid #2ea043; color:#fff; border-radius:6px; padding:7px 12px; cursor:pointer; align-self:flex-end;">➤</button>
   </div>
+
+<!-- Help Dialog -->
+<div id="help-modal" style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;" onclick="if (event.target === this) toggleHelp(false)">
+  <div style="--cfs:14px; --cfs-sm:13px; width:480px; max-width:92vw; max-height:84vh; overflow-y:auto; background:#0d1117; border:1px solid #30363d; border-radius:12px; padding:16px 18px; font-size:var(--cfs); color:#e6edf3;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+      <span id="lbl-help-title" style="font-weight:600;">Help</span>
+      <button onclick="toggleHelp(false)" style="background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:16px;">✕</button>
+    </div>
+    <div id="help-body" style="display:flex; flex-direction:column; gap:10px;"></div>
+  </div>
+</div>
 
 <!-- Provider Manager Dialog -->
 <div id="prov-dialog" style="display:none; position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">

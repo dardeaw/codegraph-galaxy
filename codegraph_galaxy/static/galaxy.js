@@ -310,6 +310,13 @@ const I18N = {
     trace_neighbors: 'Expand calls',
     trace_code: 'Read code',
     trace_blast: 'Impact',
+    help_title: 'How to use',
+    help_mouse_t: '🖱 Mouse',
+    help_mouse_rows: 'Drag: rotate the galaxy\nScroll: zoom in / out\nClick node: focus + inspector\nRight-click file/class: drill down\nDouble-click empty space: fit everything back',
+    help_keyboard_t: '⌨ Keyboard',
+    help_keyboard_rows: 'WASD / arrows: fly around (Shift = boost)\nQ / E: descend / ascend\nEnter: send chat · Shift+Enter: newline',
+    help_chat_t: '✦ AI Chat',
+    help_chat_rows: 'Scope follows your Explorer checks\nEvery answer shows its lookup trace\n"Show on graph" lights the nodes\nModel switcher up top, ⚙ adds endpoints',
     chat_copy: 'Copy',
     chat_copied: 'Copied.',
     chat_locating: 'Locating node… (opening layers as needed)',
@@ -466,6 +473,13 @@ const I18N = {
     trace_neighbors: '展開呼叫',
     trace_code: '讀取程式碼',
     trace_blast: '影響分析',
+    help_title: '使用說明',
+    help_mouse_t: '🖱 滑鼠',
+    help_mouse_rows: '拖曳：旋轉星系\n滾輪：放大 / 縮小\n點節點：聚焦＋開 Inspector\n右鍵點 file/class：往下鑽\n空地點兩下：全部收回置中',
+    help_keyboard_t: '⌨ 鍵盤',
+    help_keyboard_rows: 'WASD / 方向鍵：飛行（Shift 加速）\nQ / E：下降／上升\nEnter：送出對話 · Shift+Enter：換行',
+    help_chat_t: '✦ AI 對話',
+    help_chat_rows: '範圍跟著 Explorer 勾選走\n每個回答附查碼過程\n「在圖上顯示」打光節點\n上面可換模型，⚙ 可加 endpoint',
     chat_copy: '複製',
     chat_copied: '已複製。',
     chat_locating: '定位節點中…（自動開啟所需圖層）',
@@ -721,6 +735,7 @@ let hiddenEdgeKinds = new Set();
 let breadcrumb = [];
 let isRotating = false;
 let activeNode = null;
+let lastBgClickAt = 0;
 
 // Highlighting State
 let highlightNodes = new Set();
@@ -794,6 +809,13 @@ function init3DGraph() {
     })
     .onBackgroundClick(() => {
       clearHighlight();
+      const now = Date.now();
+      if (now - lastBgClickAt < 350) {
+        lastBgClickAt = 0;
+        if (Graph) Graph.zoomToFit(600, 40);
+      } else {
+        lastBgClickAt = now;
+      }
     });
 
   window.addEventListener('resize', () => {
@@ -3724,6 +3746,37 @@ async function showChatHighlights(ids) {
   }
   };
   doHighlight();
+}
+
+function toggleHelp(force) {
+  const modal = document.getElementById('help-modal');
+  if (!modal) return;
+  const show = typeof force === 'boolean' ? force : modal.style.display === 'none';
+  modal.style.display = show ? 'flex' : 'none';
+  if (show) renderHelpContent();
+}
+
+function renderHelpContent() {
+  const title = document.getElementById('lbl-help-title');
+  if (title) title.textContent = t('help_title');
+  const body = document.getElementById('help-body');
+  if (!body) return;
+  body.innerHTML = '';
+  for (const sec of ['mouse', 'keyboard', 'chat']) {
+    const h = document.createElement('div');
+    h.style.cssText = 'font-weight:600; color:#58a6ff; margin-bottom:2px;';
+    h.textContent = t(`help_${sec}_t`);
+    body.appendChild(h);
+    const ul = document.createElement('ul');
+    ul.style.cssText = 'margin:0 0 4px 18px; padding:0; color:#c9d1d9; display:flex; flex-direction:column; gap:3px;';
+    for (const row of t(`help_${sec}_rows`).split('\n')) {
+      if (!row.trim()) continue;
+      const li = document.createElement('li');
+      li.textContent = row.trim();
+      ul.appendChild(li);
+    }
+    body.appendChild(ul);
+  }
 }
 
 // Init

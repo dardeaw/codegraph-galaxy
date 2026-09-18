@@ -312,7 +312,8 @@ const I18N = {
     prov_f_label: 'Label',
     prov_f_base: 'Base URL (OpenAI-compatible …/v1, or Ollama host)',
     prov_f_key: 'API key (optional, stored on this machine only)',
-    prov_f_models: 'Models (comma separated)',
+    prov_f_models: 'Models — pick one to use',
+    prov_models_empty: 'Hit Auto-fill to fetch available models',
     prov_fetch: 'Auto-fill',
     prov_cancel: 'Cancel',
     prov_save: 'Save',
@@ -459,7 +460,8 @@ const I18N = {
     prov_f_label: '名稱',
     prov_f_base: 'Base URL（OpenAI 相容 …/v1，或 Ollama 主機）',
     prov_f_key: 'API key（選填，只存這台機器）',
-    prov_f_models: '模型（逗號分隔）',
+    prov_f_models: '模型——勾一個來用',
+    prov_models_empty: '按自動帶入抓取可用模型',
     prov_fetch: '自動帶入',
     prov_cancel: '取消',
     prov_save: '儲存',
@@ -2742,55 +2744,142 @@ function toggleProviderDialog(force) {
   }
 }
 
-function provPresets() {
+let provCurrentType = 'ollama';
+let provFetchedModels = [];
+
+function provTypes() {
   return [
-    { label: 'Ollama local', base: 'http://127.0.0.1:11434', key: '', models: '' },
-    { label: 'llama.cpp server', base: 'http://172.22.20.125:8080/v1', key: 'EMPTY', models: '' },
-    { label: 'OpenAI', base: 'https://api.openai.com/v1', key: '', models: 'gpt-4o-mini' },
-    { label: 'DeepSeek', base: 'https://api.deepseek.com/v1', key: '', models: 'deepseek-chat, deepseek-reasoner' },
+    { id: 'ollama', label: 'Ollama local', base: 'http://127.0.0.1:11434', key: '', urlMode: 'edit', keyMode: 'hide' },
+    { id: 'llamacpp', label: 'llama.cpp server', base: 'http://172.22.20.125:8080/v1', key: 'EMPTY', urlMode: 'edit', keyMode: 'hide' },
+    { id: 'openai', label: 'OpenAI', base: 'https://api.openai.com/v1', key: '', urlMode: 'fixed', keyMode: 'require' },
+    { id: 'deepseek', label: 'DeepSeek', base: 'https://api.deepseek.com/v1', key: '', urlMode: 'fixed', keyMode: 'require' },
+    { id: 'custom', label: 'Custom URL', base: '', urlMode: 'edit', keyMode: 'optional' },
   ];
 }
 
 function renderProvPresets() {
-  const box = document.getElementById('prov-presets');
+  const box = document.getElementById('prov-types');
   if (!box) return;
   box.innerHTML = '';
-  for (const p of provPresets()) {
+  for (const p of provTypes()) {
     const b = document.createElement('button');
     b.textContent = p.label;
+    b.dataset.typeId = p.id;
     b.style.cssText = 'border:1px solid #30363d; background:#161b22; color:#c9d1d9; border-radius:999px; padding:4px 12px; font-size:11px; cursor:pointer;';
-    b.onclick = () => {
-      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-      set('chat-prov-label', p.label);
-      set('chat-prov-base', p.base);
-      set('chat-prov-key', p.key);
-      set('chat-prov-models', p.models);
-      fetchProvModels();
-    };
+    b.onclick = () => selectProvType(p.id);
     box.appendChild(b);
   }
+  selectProvType(provCurrentType);
+}
+
+function selectProvType(id) {
+  const t = provTypes().find((p) => p.id === id) || provTypes()[0];
+  provCurrentType = t.id;
+  provFetchedModels = [];
+  const box = document.getElementById('prov-types');
+  if (box) {
+    Array.from(box.children).forEach((b) => {
+      const on = b.dataset.typeId === t.id;
+      b.style.borderColor = on ? '#1f6feb' : '#30363d';
+      b.style.color = on ? '#58a6ff' : '#c9d1d9';
+    });
+  }
+  const set = (elId, v) => { const el = document.getElementById(elId); if (el) el.value = v; };
+  set('chat-prov-label', t.label);
+  const rowUrl = document.getElementById('prov-row-url');
+  const fixedUrl = document.getElementById('prov-fixed-url');
+  if (t.urlMode === 'fixed') {
+    if (rowUrl) rowUrl.style.display = 'none';
+    if (fixedUrl) {
+      fixedUrl.style.display = 'block';
+      fixedUrl.textContent = t.base;
+    }
+  } else {
+    if (rowUrl) rowUrl.style.display = '';
+    if (fixedUrl) fixedUrl.style.display = 'none';
+    set('chat-prov-base', t.base);
+  }
+  const rowKey = document.getElementById('prov-row-key');
+  if (rowKey) rowKey.style.display = t.keyMode === 'hide' ? 'none' : '';
+  set('chat-prov-key', t.key || '');
+  const keyLabel = document.getElementById('lbl-prov-f-key');
+  if (keyLabel) keyLabel.textContent = t('prov_f_key') + (t.keyMode === 'require' ? ' *' : '');
+  renderProvModelList([]);
+  const msg = document.getElementById('chat-prov-msg');
+  if (msg) msg.textContent = '';
+  if (t.keyMode !== 'require') fetchProvModels();
+}
+
+function renderProvModelList(models) {
+  provFetchedModels = models || [];
+  const box = document.getElementById('prov-model-list');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!provFetchedModels.length) {
+    const hint = document.createElement('div');
+    hint.style.cssText = 'color:#8b949e; font-size:11px;';
+    hint.textContent = t('prov_models_empty');
+    box.appendChild(hint);
+    return;
+  }
+  provFetchedModels.forEach((m, idx) => {
+    const lab = document.createElement('label');
+    lab.style.cssText = 'display:flex; gap:8px; align-items:center; border:1px solid #21262d; border-radius:6px; padding:6px 10px; cursor:pointer; font-size:12px;';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'prov-model-pick';
+    radio.value = m;
+    if (idx === 0) radio.checked = true;
+    lab.appendChild(radio);
+    const span = document.createElement('span');
+    span.textContent = m;
+    span.style.cssText = 'overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+    lab.appendChild(span);
+    box.appendChild(lab);
+  });
+}
+
+function provPickedModel() {
+  const checked = document.querySelector('input[name="prov-model-pick"]:checked');
+  return checked ? checked.value : '';
+}
+
+function provFormBase() {
+  const t = provTypes().find((p) => p.id === provCurrentType) || {};
+  if (t.urlMode === 'fixed') return t.base;
+  const el = document.getElementById('chat-prov-base');
+  return el ? el.value.trim() : '';
+}
+
+function provFormKey() {
+  const t = provTypes().find((p) => p.id === provCurrentType) || {};
+  if (t.keyMode === 'hide') return t.key || '';
+  const el = document.getElementById('chat-prov-key');
+  return el ? el.value.trim() : '';
 }
 
 function fetchProvModels() {
   const msg = document.getElementById('chat-prov-msg');
-  const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   if (msg) msg.textContent = '…';
   fetch('/api/chat/providers/models', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base: val('chat-prov-base'), key: val('chat-prov-key') }),
+    body: JSON.stringify({ base: provFormBase(), key: provFormKey() }),
   })
     .then((res) => res.json())
     .then((d) => {
       if (d.ok && d.models && d.models.length) {
-        const el = document.getElementById('chat-prov-models');
-        if (el) el.value = d.models.slice(0, 12).join(', ');
+        renderProvModelList(d.models.slice(0, 20));
         if (msg) msg.textContent = `✅ ${d.models.length} models (${d.kind || ''})`;
-      } else if (msg) {
-        msg.textContent = `❌ ${(d && d.error) || 'empty'}`;
+      } else {
+        renderProvModelList([]);
+        if (msg) msg.textContent = `❌ ${(d && d.error) || 'empty'}`;
       }
     })
-    .catch(() => { if (msg) msg.textContent = '❌'; });
+    .catch(() => {
+      renderProvModelList([]);
+      if (msg) msg.textContent = '❌';
+    });
 }
 
 function toggleProviderSettings(force) {
@@ -2843,11 +2932,16 @@ function refreshProviderList() {
 function addChatProvider() {
   const msg = document.getElementById('chat-prov-msg');
   const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const picked = provPickedModel();
+  if (!provFetchedModels.length || !picked) {
+    if (msg) msg.textContent = `❌ ${t('prov_models_empty')}`;
+    return;
+  }
   const payload = {
     label: val('chat-prov-label'),
-    base: val('chat-prov-base'),
-    key: val('chat-prov-key'),
-    models: val('chat-prov-models').split(',').map((s) => s.trim()).filter(Boolean),
+    base: provFormBase(),
+    key: provFormKey(),
+    models: provFetchedModels,
   };
   fetch('/api/chat/providers', {
     method: 'POST',
@@ -2857,11 +2951,14 @@ function addChatProvider() {
     .then((res) => res.json().then((d) => ({ status: res.status, body: d })))
     .then(({ status, body }) => {
       if (status === 200 && body.bSuccess) {
-        if (msg) msg.textContent = `✅ ${body.provider.id}`;
-        ['chat-prov-label', 'chat-prov-base', 'chat-prov-key', 'chat-prov-models'].forEach((id) => {
-          const el = document.getElementById(id);
-          if (el) el.value = '';
-        });
+        const newId = body.provider.id;
+        fetch('/api/chat/model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: newId, model: picked }),
+        }).catch(() => { /* best-effort */ });
+        try { localStorage.setItem('galaxy-chat-model', JSON.stringify({ provider: newId, model: picked })); } catch (e) { /* ignore */ }
+        if (msg) msg.textContent = `✅ ${newId} → ${picked}`;
         refreshProviderList();
         loadChatModels();
         toggleProviderDialog(false);

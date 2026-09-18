@@ -392,23 +392,25 @@
     </div>
     <div id="chat-prov-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:12px;"></div>
     <div id="lbl-prov-add" style="font-weight:600; margin-bottom:6px;">Add provider</div>
-    <div id="prov-presets" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
-    <div style="display:flex; flex-direction:column; gap:6px;">
+    <div id="prov-types" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;"></div>
+    <div id="prov-form" style="display:flex; flex-direction:column; gap:6px;">
       <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-label">Label</span>
-        <input id="chat-prov-label" placeholder="e.g. DeepSeek local" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
+        <input id="chat-prov-label" placeholder="e.g. DeepSeek cloud" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
       </label>
-      <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-base">Base URL (OpenAI-compatible …/v1, or Ollama host)</span>
-        <input id="chat-prov-base" placeholder="https://api.deepseek.com/v1" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
+      <label id="prov-row-url" style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-base">Base URL</span>
+        <input id="chat-prov-base" placeholder="http://127.0.0.1:11434" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
       </label>
-      <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-key">API key (optional, stored on this machine only)</span>
+      <div id="prov-fixed-url" style="display:none; font-size:11px; color:#8b949e; border:1px dashed #30363d; border-radius:6px; padding:7px 10px;"></div>
+      <label id="prov-row-key" style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-key">API key</span>
         <input id="chat-prov-key" type="password" placeholder="sk-…" style="display:block; width:100%; box-sizing:border-box; margin-top:2px; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
       </label>
-      <label style="color:#8b949e; font-size:11px;"><span id="lbl-prov-f-models">Models (comma separated)</span>
-        <div style="display:flex; gap:6px; margin-top:2px;">
-          <input id="chat-prov-models" placeholder="deepseek-chat, deepseek-reasoner" style="flex:1; min-width:0; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px;" />
-          <button id="btn-prov-fetch" onclick="fetchProvModels()" style="background:transparent; border:1px solid #1f6feb; color:#58a6ff; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:12px; white-space:nowrap;">⇩ <span id="lbl-prov-fetch">Auto-fill</span></button>
+      <div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+          <span id="lbl-prov-f-models" style="color:#8b949e; font-size:11px;">Models</span>
+          <button id="btn-prov-fetch" onclick="fetchProvModels()" style="background:transparent; border:1px solid #1f6feb; color:#58a6ff; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:11px; white-space:nowrap;">⇩ <span id="lbl-prov-fetch">Auto-fill</span></button>
         </div>
-      </label>
+        <div id="prov-model-list" style="display:flex; flex-direction:column; gap:4px; max-height:150px; overflow-y:auto;"></div>
+      </div>
     </div>
     <div id="chat-prov-msg" style="color:#8b949e; margin-top:8px; min-height:16px;"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">

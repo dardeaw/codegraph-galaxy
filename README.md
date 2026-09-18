@@ -1,6 +1,6 @@
 # Code Graph Galaxy
 
-> **A high-performance 3D code intelligence visualizer and architecture exploration suite for multi-project codebases.**  
+> **A high-performance 3D code intelligence visualizer and architecture exploration suite for multi-project codebases — now with an AI chat agent that looks up your code before it answers.**  
 > Effortlessly transform complex software structures and dependency networks into an interactive, intuitive celestial universe.
 
 ---
@@ -16,7 +16,7 @@ Modern codebases grow rapidly. Understanding cross-project dependencies, module 
 
 **Code Graph Galaxy** bridges the gap between deep abstract code architecture and human spatial intuition. Powered by **Three.js WebGL** hardware acceleration and an embedded Python AST intelligence engine, it maps your repositories, classes, functions, files, and dependencies into an interactive 3D universe.
 
-Whether you are onboarding onto a massive project, conducting architecture refactoring, performing code reviews, or tracking delta changes, Code Graph Galaxy gives you an instant, holistic bird’s-eye perspective with surgical line-by-line inspection.
+Whether you are onboarding onto a massive project, conducting architecture refactoring, performing code reviews, or tracking delta changes, Code Graph Galaxy gives you an instant, holistic bird’s-eye perspective with surgical line-by-line inspection. Its built-in **AI Code Chat** goes one step further: ask about your codebase in plain language, watch the agent look up symbols, call chains, and source lines, then jump straight to the answer on the graph.
 
 ---
 

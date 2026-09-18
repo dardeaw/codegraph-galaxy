@@ -1051,50 +1051,121 @@ function updateFileLabels() {
 // kind has no file-labels (class/function/...) or its layer is hidden —
 // walk-up focus lands on the ancestor, and the ancestor's label shows.
 let focusLabelNodeId = null;
-let focusLabelDiv = null;
+const chainPillIds = new Set();
+let focusChainToken = 0;
 
 function showFocusLabelNode(n) {
   focusLabelNodeId = (n && n.id) || null;
+  chainPillIds.clear();
 }
+
+function setChainPills(ids) {
+  chainPillIds.clear();
+  for (const id of (ids || [])) chainPillIds.add(id);
+}
+
+// Light the whole visible ancestor chain above the focused node, with pills.
+// Attached chains (walk-up flows) apply synchronously; otherwise one cheap
+// local fetch. Stale-safe via focusChainToken.
+function lightFullChain(node, token) {
+  const apply = (chain) => {
+    if (!chain || !chain.length) return;
+    if (token !== focusChainToken || focusLabelNodeId !== node.id) return;
+    setChainPills(chain);
+    let added = false;
+    if (typeof highlightNodes !== 'undefined') {
+      for (const aid of chain) {
+        if (!highlightNodes.has(aid)) { highlightNodes.add(aid); added = true; }
+      }
+    }
+    if (added && typeof Graph !== 'undefined' && Graph) {
+      Graph.nodeColor(Graph.nodeColor())
+        .linkColor(Graph.linkColor())
+        .linkWidth(Graph.linkWidth())
+        .linkDirectionalParticles(Graph.linkDirectionalParticles());
+    }
+  };
+  const attached = (node && node._visibleAncestors) || null;
+  if (attached) {
+    apply(attached.filter((cid) => cid !== node.id));
+    return;
+  }
+  if (!node || !node.project || !node.id) return;
+  fetch(`/api/chat/node?id=${encodeURIComponent(node.id)}&project=${encodeURIComponent(node.project || '')}`)
+    .then((res) => res.json())
+    .then((info) => {
+      if (!info || !info.found || typeof findGraphNode !== 'function') return;
+      apply(info.vAncestors.filter((a) => a.id !== node.id && findGraphNode(a.id)).map((a) => a.id));
+    })
+    .catch(() => {});
+}
+
+const pillDivs = new Map(); // id -> pill div (focused + chain, one node one label)
 
 function updateFocusLabel() {
   if (!fileLabelLayer) return;
-  if (!focusLabelDiv) {
-    focusLabelDiv = document.createElement('div');
-    focusLabelDiv.id = 'focus-label';
-    focusLabelDiv.style.cssText = 'position:absolute;transform:translate(-50%,70%);pointer-events:none;white-space:nowrap;';
-    fileLabelLayer.appendChild(focusLabelDiv);
-  }
-  const n = (focusLabelNodeId && typeof findGraphNode === 'function') ? findGraphNode(focusLabelNodeId) : null;
-  if (!n || n.x === undefined || typeof Graph === 'undefined' || !Graph || typeof Graph.graph2ScreenCoords !== 'function') {
-    focusLabelDiv.style.display = 'none';
-    return;
-  }
-  let behind = false;
+  // Pills follow the focused node + its ancestor chain only — never the
+  // whole highlight set (project scope would sprout hundreds of pills).
+  const targets = new Set();
+  if (focusLabelNodeId) targets.add(focusLabelNodeId);
+  try {
+    for (const id of chainPillIds) targets.add(id);
+  } catch (e) { /* ignore */ }
+  // Camera basis shared by all pills this frame.
+  let camPos = null, lookDir = null;
   try {
     const cam = Graph.camera();
     const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
     if (cam && cam.position && ctrl && ctrl.target) {
-      const dx = ctrl.target.x - cam.position.x, dy = ctrl.target.y - cam.position.y, dz = ctrl.target.z - cam.position.z;
-      behind = ((n.x - cam.position.x) * dx + (n.y - cam.position.y) * dy + (n.z - cam.position.z) * dz) < 0;
+      camPos = cam.position;
+      lookDir = {
+        x: ctrl.target.x - camPos.x,
+        y: ctrl.target.y - camPos.y,
+        z: ctrl.target.z - camPos.z,
+      };
     }
   } catch (e) { /* ignore */ }
-  let sp = null;
-  try { sp = Graph.graph2ScreenCoords(n.x, n.y, n.z); } catch (e) { /* ignore */ }
-  const vx = sp ? sp.x + graphOriginX : -9999;
-  if (behind || !sp || vx < graphOriginX - 80 || sp.y < 8 || vx > graphVisibleRight + 40 || sp.y > window.innerHeight + 40) {
-    focusLabelDiv.style.display = 'none';
-    return;
+  const seen = new Set();
+  for (const id of targets) {
+    const n = (typeof findGraphNode === 'function') ? findGraphNode(id) : null;
+    if (!n || n.x === undefined || typeof Graph === 'undefined' || !Graph || typeof Graph.graph2ScreenCoords !== 'function') continue;
+    // Filename labels already cover plain file nodes — except the focused one.
+    if (n.kind === 'file' && id !== focusLabelNodeId) {
+      const base = (typeof fileLabelName === 'function') ? fileLabelName(n) : '';
+      if (base && base !== '__init__.py') continue;
+    }
+    let behind = false;
+    if (camPos && lookDir) {
+      behind = ((n.x - camPos.x) * lookDir.x + (n.y - camPos.y) * lookDir.y + (n.z - camPos.z) * lookDir.z) < 0;
+    }
+    let sp = null;
+    try { sp = Graph.graph2ScreenCoords(n.x, n.y, n.z); } catch (e) { /* ignore */ }
+    const vx = sp ? sp.x + graphOriginX : -9999;
+    if (behind || !sp || vx < graphOriginX - 80 || sp.y < 8 || vx > graphVisibleRight + 40 || sp.y > window.innerHeight + 40) continue;
+    seen.add(id);
+    let div = pillDivs.get(id);
+    if (!div) {
+      div = document.createElement('div');
+      div.style.cssText = 'position:absolute;transform:translate(-50%,70%);pointer-events:none;white-space:nowrap;';
+      fileLabelLayer.appendChild(div);
+      pillDivs.set(id, div);
+    }
+    const color = (typeof KIND_COLORS !== 'undefined' && KIND_COLORS[n.kind]) || '#58a6ff';
+    div.style.display = '';
+    div.style.left = `${vx}px`;
+    div.style.top = `${sp.y}px`;
+    div.innerHTML = '';
+    const pill = document.createElement('span');
+    pill.textContent = `${n.name || n.id} · ${n.kind || ''}`;
+    pill.style.cssText = `background:rgba(13,17,23,0.92);border:1px solid ${color};color:${color};border-radius:999px;padding:2px 10px;font-size:12px;`;
+    div.appendChild(pill);
   }
-  const color = (typeof KIND_COLORS !== 'undefined' && KIND_COLORS[n.kind]) || '#58a6ff';
-  focusLabelDiv.style.display = '';
-  focusLabelDiv.style.left = `${vx}px`;
-  focusLabelDiv.style.top = `${sp.y}px`;
-  focusLabelDiv.innerHTML = '';
-  const pill = document.createElement('span');
-  pill.textContent = `${n.name || n.id} · ${n.kind || ''}`;
-  pill.style.cssText = `background:rgba(13,17,23,0.92);border:1px solid ${color};color:${color};border-radius:999px;padding:2px 10px;font-size:12px;`;
-  focusLabelDiv.appendChild(pill);
+  for (const [id, div] of pillDivs) {
+    if (!seen.has(id)) {
+      try { div.remove(); } catch (e) { /* ignore */ }
+      pillDivs.delete(id);
+    }
+  }
 }
 
 // ==========================================
@@ -2030,6 +2101,7 @@ function focusOnNode(node) {
     1200
   );
   showFocusLabelNode(node);
+  if (node && node.id) lightFullChain(node, ++focusChainToken);
 }
 
 // Open Inspector for Nodes/Files
@@ -3875,6 +3947,7 @@ async function showChatHighlights(ids) {
       }
     }
     if (needReload) loadRootGraph();
+    const chainUnion = new Set();
     for (let i = 0; i < 40; i++) {
       let allDone = true;
       for (const { id, info } of infos) {
@@ -3888,6 +3961,9 @@ async function showChatHighlights(ids) {
         if (hit) {
           if (hit.id !== id) hit._viaAncestor = { id, name: info.name, kind: info.kind };
           resolved.set(id, hit);
+          for (const a of ((info.vAncestors) || [])) {
+            if (a.id !== hit.id && findGraphNode(a.id)) chainUnion.add(a.id);
+          }
         } else {
           allDone = false;
         }
@@ -3924,6 +4000,18 @@ async function showChatHighlights(ids) {
     .linkDirectionalParticles(Graph.linkDirectionalParticles());
   const first = uniq[0];
   focusOnNode(first);
+  focusChainToken++;
+  setChainPills(Array.from(chainUnion));
+  let chainAdded = false;
+  for (const aid of chainUnion) {
+    if (!highlightNodes.has(aid)) { highlightNodes.add(aid); chainAdded = true; }
+  }
+  if (chainAdded) {
+    Graph.nodeColor(Graph.nodeColor())
+      .linkColor(Graph.linkColor())
+      .linkWidth(Graph.linkWidth())
+      .linkDirectionalParticles(Graph.linkDirectionalParticles());
+  }
   try { openDrawer(first); } catch (e) { /* drawer optional */ }
   try { syncExplorerSelection(first); } catch (e) { /* ignore */ }
   if (uniq.length < ids.length) {

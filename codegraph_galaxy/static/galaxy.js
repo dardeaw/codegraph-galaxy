@@ -829,8 +829,11 @@ function init3DGraph() {
       new MutationObserver(() => layoutGraphViewport())
         .observe(drawerEl, { attributes: true, attributeFilter: ['class'] });
     }
-    if (drawerEl && typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(() => layoutGraphViewport()).observe(drawerEl);
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => layoutGraphViewport());
+      if (drawerEl) ro.observe(drawerEl);
+      const treeEl = document.getElementById('tree-panel');
+      if (treeEl) ro.observe(treeEl);
     }
   } catch (e) { /* observers optional */ }
   layoutGraphViewport();
@@ -838,22 +841,38 @@ function init3DGraph() {
   startFlightLoop();
 }
 
-// 3D canvas yields to the Inspector drawer: orbit center stays in the visible
-// strip so focusOnNode never lands under the panel.
-function drawerViewportCut() {
+// 3D canvas yields to side panels: orbit center stays in the visible
+// strip so focusOnNode never lands under a panel.
+let graphOriginX = 0;
+let graphVisibleRight = (typeof window !== 'undefined' && window.innerWidth) || 1280;
+
+function panelCutWidth(id, needOpenClass) {
   try {
-    const drawer = document.getElementById('drawer');
-    if (drawer && drawer.classList.contains('open')) {
-      return drawer.getBoundingClientRect().width || 0;
-    }
+    const el = document.getElementById(id);
+    if (!el || el.offsetParent === null) return 0;
+    if (needOpenClass && !el.classList.contains('open')) return 0;
+    return el.getBoundingClientRect().width || 0;
   } catch (e) { /* ignore */ }
   return 0;
+}
+
+function drawerViewportCut() {
+  return panelCutWidth('drawer', true);
 }
 
 function layoutGraphViewport() {
   if (typeof Graph === 'undefined' || !Graph || !Graph.width) return;
   try {
-    Graph.width(Math.max(320, window.innerWidth - drawerViewportCut()));
+    const leftCut = Math.round(panelCutWidth('tree-panel', false));
+    const rightCut = Math.round(drawerViewportCut());
+    const w = Math.max(320, window.innerWidth - leftCut - rightCut);
+    Graph.width(w);
+    try {
+      const cv = document.querySelector('#3d-graph canvas');
+      if (cv) cv.style.marginLeft = `${leftCut}px`;
+    } catch (e) { /* ignore */ }
+    graphOriginX = leftCut;
+    graphVisibleRight = window.innerWidth - rightCut;
   } catch (e) { /* ignore */ }
 }
 
@@ -1000,12 +1019,13 @@ function updateFileLabels() {
     }
     let sp = null;
     try { sp = Graph.graph2ScreenCoords(n.x, n.y, n.z); } catch (e) { /* ignore */ }
-    if (behind || !sp || sp.x < -80 || sp.y < -40 || sp.x > window.innerWidth + 80 || sp.y > window.innerHeight + 40) {
+    const vx = sp ? sp.x + graphOriginX : -9999;
+    if (behind || !sp || vx < graphOriginX - 80 || sp.y < 8 || vx > graphVisibleRight + 40 || sp.y > window.innerHeight + 40) {
       div.style.display = 'none';
       continue;
     }
     div.style.display = '';
-    div.style.left = `${sp.x}px`;
+    div.style.left = `${vx}px`;
     div.style.top = `${sp.y}px`;
     div.style.opacity = (hlActive && !highlightNodes.has(n.id)) ? '0.15' : '0.95';
   }

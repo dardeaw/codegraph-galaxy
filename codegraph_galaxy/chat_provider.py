@@ -106,11 +106,11 @@ def _FnSlug(strLabel: str) -> str:
 
 
 def FnAddProvider(str_label: str, str_base: str, str_key: str = "",
-                  v_models: Optional[List[str]] = None) -> Dict[str, Any]:
+                  v_models: Optional[List[str]] = None, str_lang: str = "") -> Dict[str, Any]:
     """Add a user provider (persisted to JSON file). Returns the entry."""
     strBase = (str_base or "").rstrip("/")
     if not str_label or not strBase:
-        raise ValueError("label 與 base URL 不可為空")
+        raise ValueError("label 與 base URL 不可為空" if str_lang.startswith("zh") else "Label and base URL are required")
     dicData = _FnLoadFileProviders()
     vP = dicData["providers"]
     strId = _FnSlug(str_label)
@@ -151,17 +151,19 @@ def _FnFindProviderEntry(str_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def FnTestProvider(str_id: str) -> Dict[str, Any]:
+def FnTestProvider(str_id: str, str_lang: str = "") -> Dict[str, Any]:
     """Connectivity test: ollama → /api/tags, openai-compatible → /models."""
+    bZh = str(str_lang or "").strip().lower().replace("_", "-").startswith("zh")
     dicP = _FnFindProviderEntry(str_id)
     if not dicP:
-        return {"ok": False, "error": f"找不到 provider {str_id}"}
+        return {"ok": False, "error": f"找不到 provider {str_id}" if bZh else f"Provider {str_id} not found"}
     try:
         if dicP["proto"] == "ollama":
             with urllib.request.urlopen(dicP["base"] + "/api/tags", timeout=10) as oRes:
                 dicTags = json.loads(oRes.read().decode("utf-8"))
             vModels = [m.get("name") for m in (dicTags.get("models") or []) if m.get("name")]
-            return {"ok": True, "info": f"{len(vModels)} 個模型：{"、".join(vModels[:8])}"}
+            strInfo = f"{len(vModels)} 個模型：{'、'.join(vModels[:8])}" if bZh else f"{len(vModels)} models: {', '.join(vModels[:8])}"
+            return {"ok": True, "info": strInfo}
         dicHeaders = {}
         if dicP.get("key"):
             dicHeaders["Authorization"] = "Bearer " + dicP["key"]
@@ -169,7 +171,11 @@ def FnTestProvider(str_id: str) -> Dict[str, Any]:
         with urllib.request.urlopen(oReq, timeout=10) as oRes:
             dicData = json.loads(oRes.read().decode("utf-8"))
         vModels = [m.get("id") for m in (dicData.get("data") or []) if m.get("id")]
-        return {"ok": True, "info": f"{len(vModels)} 個模型：{"、".join(vModels[:8])}" or "連通（無模型列表）"}
+        if vModels:
+            strInfo = f"{len(vModels)} 個模型：{'、'.join(vModels[:8])}" if bZh else f"{len(vModels)} models: {', '.join(vModels[:8])}"
+        else:
+            strInfo = "連通（無模型列表）" if bZh else "Connected (no model list)"
+        return {"ok": True, "info": strInfo}
     except Exception as oErr:
         return {"ok": False, "error": f"{type(oErr).__name__}: {oErr}"}
 
@@ -228,6 +234,11 @@ def _FnPickLang(dic_ctx: Optional[Dict[str, Any]] = None) -> str:
     """zh-TW/zh-CN/HK → zh, everything else → en."""
     s = str((dic_ctx or {}).get("strLang") or "").strip().lower().replace("_", "-")
     return "zh" if s.startswith("zh") else "en"
+
+
+def _T(dic_ctx: Optional[Dict[str, Any]], str_zh: str, str_en: str) -> str:
+    """Backend user-facing strings follow the UI language (trace summaries, hints)."""
+    return str_zh if _FnPickLang(dic_ctx) == "zh" else str_en
 
 TOOLS = [
     {"type": "function", "function": {
@@ -455,7 +466,7 @@ class GalaxyChatProvider:
         """
         vIndexed = v_scope if v_scope else self._FnKnownIndexed()
         if not vIndexed:
-            return None, None, None, "範圍內無已索引的專案"
+            return None, None, None, _T(dic_ctx, "範圍內無已索引的專案", "No indexed projects in scope")
         for strCand in (str_want or "", str((dic_ctx or {}).get("strProject") or "")):
             if not strCand or not self._fn_resolve_db:
                 continue
@@ -468,13 +479,22 @@ class GalaxyChatProvider:
                 if t:
                     return t[0], t[1], strHit, ""
             if vClose:
-                return None, None, None, "專案「" + strCand + "」不明確，是指「" + "」或「".join(vClose) + "」嗎？"
-            return None, None, None, "找不到專案「" + strCand + "」。目前已索引：" + "、".join(vIndexed[:12])
+                return None, None, None, _T(
+                    dic_ctx,
+                    "專案「" + strCand + "」不明確，是指「" + "」或「".join(vClose) + "」嗎？",
+                    f'Ambiguous project "{strCand}". Did you mean {" / ".join(vClose)}?')
+            return None, None, None, _T(
+                dic_ctx,
+                "找不到專案「" + strCand + "」。目前已索引：" + "、".join(vIndexed[:12]),
+                f'Project "{strCand}" not found. Indexed: {", ".join(vIndexed[:12])}')
         if len(vIndexed) == 1 and self._fn_resolve_db:
             t = self._fn_resolve_db(vIndexed[0])
             if t:
                 return t[0], t[1], vIndexed[0], ""
-        return None, None, None, "需指定專案（目前已索引：" + "、".join(vIndexed[:12]) + "）"
+        return None, None, None, _T(
+            dic_ctx,
+            "需指定專案（目前已索引：" + "、".join(vIndexed[:12]) + "）",
+            "Please pick a project (indexed: " + ", ".join(vIndexed[:12]) + ")")
 
     def _FnSearchAll(self, strKeyword: str, nLimit: int, str_only_project: str = "",
                        v_scope: Optional[List[str]] = None) -> Tuple[List[Dict[str, Any]], str]:
@@ -527,7 +547,9 @@ class GalaxyChatProvider:
             strNames = "、".join(f"{_disp(h)}@{h.get('project', '?')}" for h in vHits[:6]) or "none"
             vNodes = [{"id": h.get("id"), "name": _disp(h), "kind": h.get("kind") or "",
                        "project": h.get("project", "")} for h in vHits[:8] if h.get("id")]
-            return vHits, f"命中 {len(vHits)} 個：{strNames}", vIds, None, vNodes
+            strSumm = _T(dicCtx, f"命中 {len(vHits)} 個：{strNames}",
+                         f"Found {len(vHits)}: {strNames}")
+            return vHits, strSumm, vIds, None, vNodes
         if strName in ("galaxy_get_neighbors", "galaxy_blast_radius"):
             strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx, vScope)
             if strErr:
@@ -537,7 +559,9 @@ class GalaxyChatProvider:
             vNodes = [{"id": n.get("id"), "name": str(n.get("name") or n.get("id") or "?"),
                        "kind": n.get("kind") or "", "project": strProj or ""}
                       for n in dicRes["nodes"][:10] if n.get("id")]
-            return dicRes, f"[{strProj}] 展開 {dicRes['count']} 個相鄰節點", vIds, strProj, vNodes
+            strSumm = _T(dicCtx, f"[{strProj}] 展開 {dicRes['count']} 個相鄰節點",
+                         f"[{strProj}] expanded to {dicRes['count']} neighbors")
+            return dicRes, strSumm, vIds, strProj, vNodes
         if strName == "galaxy_get_code":
             strDb, strRepo, strProj, strErr = self._FnResolveSingle(str(dicArgs.get("project", "") or ""), dicCtx, vScope)
             if strErr:
@@ -545,8 +569,10 @@ class GalaxyChatProvider:
             nStart = max(1, int(dicArgs.get("start_line", 1) or 1))
             nEnd = min(nStart + MAX_CODE_LINES, int(dicArgs.get("end_line", nStart + 50) or (nStart + 50)))
             dicSnippet, _ = extract_code_snippet(strRepo, str(dicArgs.get("file_path", "")), nStart, nEnd)
-            return dicSnippet, f"[{strProj}] 讀取 {dicArgs.get('file_path')}:{nStart}-{nEnd}", [], strProj, []
-        return {"error": f"unknown tool {strName}"}, "未知工具", [], None, []
+            strSumm = _T(dicCtx, f"[{strProj}] 讀取 {dicArgs.get('file_path')}:{nStart}-{nEnd}",
+                         f"[{strProj}] read {dicArgs.get('file_path')}:{nStart}-{nEnd}")
+            return dicSnippet, strSumm, [], strProj, []
+        return {"error": f"unknown tool {strName}"}, _T(dicCtx, "未知工具", "Unknown tool"), [], None, []
 
     # ---------------- target repo ----------------
     def _FnKnownIndexed(self) -> List[str]:
@@ -600,7 +626,8 @@ class GalaxyChatProvider:
         strNudge = FINAL_NUDGES[strLang]
         vIndexed = self._FnKnownIndexed()
         if not vIndexed:
-            return "尚無已索引的專案，請先到庫管理 init", [], [], None, None
+            return _T(dicCtx, "尚無已索引的專案，請先到庫管理 init",
+                      "No indexed projects yet — init one in Repositories first."), [], [], None, None
         # Seed memory from context project (validated, never blocks).
         strResolved = None
         strHit, _ = self._FnMatchProject(str(dicCtx.get("strProject") or ""), vIndexed)
@@ -644,13 +671,16 @@ class GalaxyChatProvider:
                     except Exception:
                         strResult = str(oResult)[:6000]
                     vMessages.append({"role": "tool", "content": strResult})
-            return "（達到工具呼叫上限，僅顯示已查到的部分結果）", vTrace, vHighlights, None, strResolved
+            return _T(dicCtx, "（達到工具呼叫上限，僅顯示已查到的部分結果）",
+                        "(tool-call budget exhausted — showing what was found)"), vTrace, vHighlights, None, strResolved
         except Exception as oErr:
             strErr = f"{type(oErr).__name__}: {oErr}"
             if "URLError" in type(oErr).__name__ or "urlopen error" in strErr:
-                return ("連不上本地 LLM（{0}）。請確認 Ollama 有跑，或設 GALAXY_LLM_URL/GALAXY_LLM_MODEL。".format(self._str_base),
-                        vTrace, vHighlights, None, strResolved)
-            return f"對話失敗：{strErr}", vTrace, vHighlights, None, strResolved
+                strMsg = _T(dicCtx,
+                            "連不上 LLM（{0}）。請檢查 provider 設定（⚙）或網路。".format(self._str_base),
+                            "Cannot reach the LLM ({0}). Check provider settings (⚙) or network.".format(self._str_base))
+                return (strMsg, vTrace, vHighlights, None, strResolved)
+            return _T(dicCtx, f"對話失敗：{strErr}", f"Chat failed: {strErr}"), vTrace, vHighlights, None, strResolved
 
     # RDLib ChatDialog provider shape (plus optional model/provider override)
     def FnChat(self, strMessage: str, dicContext: Dict[str, Any],

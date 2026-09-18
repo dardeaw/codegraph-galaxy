@@ -208,7 +208,8 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         data = request.get_json(silent=True) or {}
         try:
             entry = FnAddProvider(data.get("label", ""), data.get("base", ""),
-                                  data.get("key", ""), data.get("models") or [])
+                                  data.get("key", ""), data.get("models") or [],
+                                  data.get("strLang", ""))
             return jsonify({"bSuccess": True, "provider": entry})
         except ValueError as e:
             return jsonify({"bSuccess": False, "strError": str(e)}), 400
@@ -217,11 +218,15 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def chat_delete_provider(pid):
         if FnDeleteProvider(pid):
             return jsonify({"bSuccess": True})
-        return jsonify({"bSuccess": False, "strError": "僅可刪除自建 provider"}), 400
+        strLang = (request.args.get("strLang") or "")
+        bZh = strLang.strip().lower().replace("_", "-").startswith("zh")
+        return jsonify({"bSuccess": False,
+                        "strError": "僅可刪除自建 provider" if bZh else "Only user-added providers can be deleted"}), 400
 
     @app.route("/api/chat/providers/<pid>/test", methods=["POST"])
     def chat_test_provider(pid):
-        return jsonify(FnTestProvider(pid))
+        data = request.get_json(silent=True) or {}
+        return jsonify(FnTestProvider(pid, data.get("strLang", "")))
 
     @app.route("/api/chat/providers/models", methods=["POST"])
     def chat_remote_models():

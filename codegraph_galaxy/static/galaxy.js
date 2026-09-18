@@ -2923,7 +2923,11 @@ function refreshProviderList() {
         testBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#c9d1d9; cursor:pointer; padding:2px 8px; font-size:var(--cfs-sm);';
         testBtn.onclick = () => {
           if (msg) msg.textContent = '…';
-          fetch(`/api/chat/providers/${encodeURIComponent(p.id)}/test`, { method: 'POST' })
+          fetch(`/api/chat/providers/${encodeURIComponent(p.id)}/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ strLang: (typeof currentLang !== 'undefined' && currentLang) || 'en-US' }),
+          })
             .then((r) => r.json())
             .then((d) => { if (msg) msg.textContent = d.ok ? `✅ ${d.info || ''}` : `❌ ${d.error || ''}`; })
             .catch(() => { if (msg) msg.textContent = '❌'; });
@@ -2934,7 +2938,8 @@ function refreshProviderList() {
           delBtn.textContent = '✕';
           delBtn.style.cssText = 'background:transparent; border:1px solid #30363d; border-radius:6px; color:#f85149; cursor:pointer; padding:2px 8px; font-size:var(--cfs-sm);';
           delBtn.onclick = () => {
-            fetch(`/api/chat/providers/${encodeURIComponent(p.id)}`, { method: 'DELETE' })
+            const lang = (typeof currentLang !== 'undefined' && currentLang) || 'en-US';
+            fetch(`/api/chat/providers/${encodeURIComponent(p.id)}?strLang=${encodeURIComponent(lang)}`, { method: 'DELETE' })
               .then(() => { refreshProviderList(); loadChatModels(); })
               .catch(() => { /* ignore */ });
           };
@@ -2959,6 +2964,7 @@ function addChatProvider() {
     base: provFormBase(),
     key: provFormKey(),
     models: provFetchedModels,
+    strLang: (typeof currentLang !== 'undefined' && currentLang) || 'en-US',
   };
   fetch('/api/chat/providers', {
     method: 'POST',

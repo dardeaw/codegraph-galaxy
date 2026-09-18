@@ -1468,19 +1468,17 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
         symNodeEl.onclick = (e) => {
           e.stopPropagation();
           selectTreeNode(symNodeEl);
+          openDrawer(s);
           ensureChatNodeVisible(s.id, s.project).then((n) => {
-            const target = n || s;
+            const target = (n && n._viaAncestor) ? n : (n || s);
             highlightScope('node', target);
             focusOnNode(target);
-            openDrawer(target);
-            try { syncExplorerSelection(target); } catch (err) { /* ignore */ }
             if (n && n._viaAncestor) {
               showToast(t('chat_show_parent', { name: n.name || n.id, kind: n.kind || '' }));
             }
           }).catch(() => {
             highlightScope('node', s);
             focusOnNode(s);
-            openDrawer(s);
           });
         };
         if (selectedKey === s.id) {

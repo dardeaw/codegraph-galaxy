@@ -360,7 +360,7 @@
 </div>
 
 <!-- Copilot-style Chat Panel -->
-<div id="chat-panel" style="display:none; position:fixed; top:48px; right:12px; width:380px; max-width:92vw; height:calc(100vh - 120px); min-width:280px; min-height:300px; z-index:60; flex-direction:column; background:#0d1117; border:1px solid #30363d; border-radius:10px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.5); font-size:12px; resize:both;">
+<div id="chat-panel" style="display:none; position:fixed; top:48px; right:12px; width:380px; max-width:92vw; height:calc(100vh - 120px); min-width:280px; min-height:300px; z-index:60; flex-direction:column; background:#0d1117; border:1px solid #30363d; border-radius:10px; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.5); font-size:12px;">
   <div id="chat-header" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #21262d; cursor:move; user-select:none;">
     <span id="lbl-chat-title" style="font-weight:600;">💬 Code Assistant</span>
     <button onclick="toggleChatPanel(false)" style="background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:14px;">✕</button>
@@ -391,6 +391,7 @@
     <textarea id="chat-input" rows="2" placeholder="Ask anything about the code… (Enter to send, Shift+Enter for newline)" autocomplete="off" style="flex:1; background:#010409; border:1px solid #30363d; border-radius:6px; padding:7px 10px; color:#e6edf3; font-size:12px; resize:vertical; font-family:inherit;"></textarea>
     <button id="chat-send" onclick="sendChatFromInput()" style="background:#238636; border:1px solid #2ea043; color:#fff; border-radius:6px; padding:7px 12px; cursor:pointer; align-self:flex-end;">➤</button>
   </div>
+  <div id="chat-resize" title="Resize" style="position:absolute; right:3px; bottom:3px; width:14px; height:14px; cursor:nwse-resize; color:#8b949e; font-size:12px; line-height:14px; text-align:center; user-select:none;">⌟</div>
 </div>
 
 </body>

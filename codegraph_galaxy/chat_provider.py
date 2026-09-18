@@ -31,7 +31,6 @@ MAX_ITERS = 6
 MAX_SEARCH = 20
 MAX_EDGES = 60
 MAX_CODE_LINES = 120
-FINAL_NUDGE = "已查到足夠資訊，請直接用中文回答原問題，不要再呼叫工具。"
 
 # Session-level default (opencode-like switching; payload override wins).
 _SESSION = {"provider": None, "model": None}
@@ -174,14 +173,32 @@ def FnTestProvider(str_id: str) -> Dict[str, Any]:
     except Exception as oErr:
         return {"ok": False, "error": f"{type(oErr).__name__}: {oErr}"}
 
-SYSTEM_PROMPT = (
-    "You are a code assistant inside CodeGraph Galaxy. Answer in the user's language "
-    "(Traditional Chinese if the user writes Traditional Chinese). "
-    "Use the provided tools to look up the codebase — never invent symbols, files or line numbers. "
-    "galaxy_search_symbols searches the Explorer-selected scope (or all indexed projects); "
-    "its hits carry project names — pass that project into neighbors/code/blast_radius. "
-    "Keep the final answer concise and reference node ids in backticks like `auth:login`."
-)
+SYSTEM_PROMPTS = {
+    "zh": (
+        "你是 CodeGraph Galaxy 裡的程式碼助理。一律以繁體中文回答。"
+        "使用提供的工具查詢程式碼——絕不編造符號、檔案或行號。"
+        "galaxy_search_symbols 預設搜尋 Explorer 選取範圍（未選則全庫），命中自帶專案名；"
+        "把該專案名傳進 neighbors/code/blast_radius。"
+        "最終回答保持簡潔，節點 id 用反引號標註，例如 `auth:login`。"
+    ),
+    "en": (
+        "You are a code assistant inside CodeGraph Galaxy. Always answer in English. "
+        "Use the provided tools to look up the codebase — never invent symbols, files or line numbers. "
+        "galaxy_search_symbols searches the Explorer-selected scope (or all indexed projects); "
+        "its hits carry project names — pass that project into neighbors/code/blast_radius. "
+        "Keep the final answer concise and reference node ids in backticks like `auth:login`."
+    ),
+}
+FINAL_NUDGES = {
+    "zh": "已查到足夠資訊，請直接用中文回答原問題，不要再呼叫工具。",
+    "en": "Enough evidence gathered. Answer the original question directly without more tool calls.",
+}
+
+
+def _FnPickLang(dic_ctx: Optional[Dict[str, Any]] = None) -> str:
+    """zh-TW/zh-CN/HK → zh, everything else → en."""
+    s = str((dic_ctx or {}).get("strLang") or "").strip().lower().replace("_", "-")
+    return "zh" if s.startswith("zh") else "en"
 
 TOOLS = [
     {"type": "function", "function": {
@@ -500,6 +517,9 @@ class GalaxyChatProvider:
                 str_model: Optional[str] = None, str_provider: Optional[str] = None,
                 fnOnTrace=None) -> Tuple[str, List[Dict[str, Any]], List[str], Optional[str], Optional[str]]:
         dicCtx = dicContext or {}
+        strLang = _FnPickLang(dicCtx)
+        strSystem = SYSTEM_PROMPTS[strLang]
+        strNudge = FINAL_NUDGES[strLang]
         vIndexed = self._FnKnownIndexed()
         if not vIndexed:
             return "尚無已索引的專案，請先到庫管理 init", [], [], None, None
@@ -508,7 +528,7 @@ class GalaxyChatProvider:
         strHit, _ = self._FnMatchProject(str(dicCtx.get("strProject") or ""), vIndexed)
         if strHit:
             strResolved = strHit
-        vMessages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        vMessages: List[Dict[str, Any]] = [{"role": "system", "content": strSystem}]
         for dicMsg in (dicContext or {}).get("vHistory") or []:
             if isinstance(dicMsg, dict) and dicMsg.get("role") in ("user", "assistant"):
                 vMessages.append({"role": dicMsg["role"], "content": str(dicMsg.get("content", ""))[:4000]})
@@ -518,7 +538,7 @@ class GalaxyChatProvider:
         try:
             for nIter in range(MAX_ITERS):
                 if nIter == MAX_ITERS - 1:
-                    vMessages.append({"role": "user", "content": FINAL_NUDGE})
+                    vMessages.append({"role": "user", "content": strNudge})
                 with self._FnPostChat(vMessages, str_model, str_provider)[0] as oRes:
                     dicRes = json.loads(oRes.read().decode("utf-8"))
                 strProto = self._FnResolveTarget(str_model, str_provider)[0]
@@ -571,11 +591,14 @@ class GalaxyChatProvider:
             yield ("trace", dicStep)
         # Re-ask for a streamed final answer grounded on the collected evidence.
         strEvidence = json.dumps({"trace": vTrace, "reply_draft": strReply}, ensure_ascii=False)[:8000]
+        strLang = _FnPickLang(dicContext or {})
+        strAskFinal = ("Now give the final concise answer to the original question." if strLang == "en"
+                       else "現在針對原問題給出最終簡潔回答。")
         vMessages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPTS[strLang]},
             {"role": "user", "content": strMessage},
             {"role": "assistant", "content": "Evidence collected: " + strEvidence},
-            {"role": "user", "content": "Now give the final concise answer to the original question."},
+            {"role": "user", "content": strAskFinal},
         ]
         try:
             oRes, strProto = self._FnPostChat(vMessages, str_model, str_provider, bStream=True)

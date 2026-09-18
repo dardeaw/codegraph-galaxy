@@ -2648,6 +2648,28 @@ function initChatPanelDrag() {
   document.addEventListener('mouseup', () => {
     if (panel.style.display !== 'none') saveChatPanelGeom();
   });
+  const grip = document.getElementById('chat-resize');
+  if (grip && !grip.dataset.bound) {
+    grip.dataset.bound = '1';
+    grip.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX, startY = e.clientY;
+      const r = panel.getBoundingClientRect();
+      const baseW = r.width, baseH = r.height;
+      const onMove = (ev) => {
+        panel.style.width = `${Math.min(Math.max(280, baseW + ev.clientX - startX), window.innerWidth - 24)}px`;
+        panel.style.height = `${Math.min(Math.max(300, baseH + ev.clientY - startY), window.innerHeight - 24)}px`;
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        saveChatPanelGeom();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
 }
 
 function toggleProviderSettings(force) {
@@ -2830,6 +2852,7 @@ function sendChatMessage(text) {
       vHistory: chatHistory.slice(-10),
       strProject: chatCurrentProject(),
       vProjects: Array.from(selectedProjects || []),
+      strLang: (typeof currentLang !== 'undefined' && currentLang) || 'en-US',
     },
     ...chatSelectedModel(),
   };

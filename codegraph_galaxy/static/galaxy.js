@@ -303,9 +303,8 @@ const I18N = {
     chat_model: 'Model',
     chat_model_loading: 'Loading models…',
     chat_model_unavailable: 'No models available',
-    chat_project: 'Project',
-    chat_project_auto: 'Auto',
-    chat_project_set: 'Project: {name}',
+    chat_project: 'Scope',
+    chat_scope_all: 'All projects (follows Explorer)',
     chat_prov_test: 'Test',
     chat_placeholder: 'Ask anything about the code…',
     chat_thinking: 'Thinking…',
@@ -441,9 +440,8 @@ const I18N = {
     chat_model: '模型',
     chat_model_loading: '載入模型中…',
     chat_model_unavailable: '無可用模型',
-    chat_project: '專案',
-    chat_project_auto: '自動',
-    chat_project_set: '專案：{name}',
+    chat_project: '範圍',
+    chat_scope_all: '全部專案（跟 Explorer 連動）',
     chat_prov_test: '測試',
     chat_placeholder: '問 codebase 任何問題…',
     chat_thinking: '思考中…',
@@ -2565,57 +2563,31 @@ function loadChatModels() {
 
 function chatCurrentProject() {
   try {
-    const saved = localStorage.getItem('galaxy-chat-project');
-    if (saved) return saved;
+    return localStorage.getItem('galaxy-chat-project') || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function setChatProject(name) {
+  if (!name) return;
+  try { localStorage.setItem('galaxy-chat-project', name); } catch (e) { /* ignore */ }
+}
+
+function renderChatScope() {
+  const el = document.getElementById('chat-scope');
+  if (!el) return;
+  let names = [];
+  try {
+    names = Array.from(selectedProjects || []);
   } catch (e) { /* ignore */ }
-  const sel = document.getElementById('chat-project');
-  return (sel && sel.value) || '';
-}
-
-function setChatProject(name, silent) {
-  if (name) {
-    try { localStorage.setItem('galaxy-chat-project', name); } catch (e) { /* ignore */ }
+  if (!names.length) {
+    el.textContent = t('chat_scope_all');
+    el.title = t('chat_scope_all');
+  } else {
+    el.textContent = names.join('、');
+    el.title = names.join('、');
   }
-  const sel = document.getElementById('chat-project');
-  if (sel && name) {
-    const match = Array.from(sel.options).find((o) => o.value === name);
-    if (match) sel.value = name;
-  }
-  if (!silent) showToast(t('chat_project_set', { name: name || '—' }));
-}
-
-function loadChatProjects() {
-  const sel = document.getElementById('chat-project');
-  if (!sel) return;
-  fetch('/api/projects')
-    .then((res) => res.json())
-    .then((data) => {
-      sel.innerHTML = '';
-      const auto = document.createElement('option');
-      auto.value = '';
-      auto.textContent = t('chat_project_auto');
-      sel.appendChild(auto);
-      const list = Array.isArray(data) ? data : (data.projects || []);
-      for (const p of list) {
-        if (!p || !p.name || !(p.nodes > 0)) continue;
-        const opt = document.createElement('option');
-        opt.value = p.name;
-        opt.textContent = `${p.name} (${p.nodes})`;
-        sel.appendChild(opt);
-      }
-      const saved = chatCurrentProject();
-      if (saved) {
-        const match = Array.from(sel.options).find((o) => o.value === saved);
-        if (match) sel.value = saved;
-      }
-    })
-    .catch(() => { /* projects optional */ });
-  sel.onchange = () => {
-    try {
-      if (sel.value) localStorage.setItem('galaxy-chat-project', sel.value);
-      else localStorage.removeItem('galaxy-chat-project');
-    } catch (e) { /* ignore */ }
-  };
 }
 
 function toggleProviderSettings(force) {
@@ -2709,7 +2681,7 @@ function toggleChatPanel(force) {
     renderChatLabels();
     renderChatChips();
     loadChatModels();
-    loadChatProjects();
+    renderChatScope();
     const inp = document.getElementById('chat-input');
     if (inp) {
       inp.focus();
@@ -2790,11 +2762,6 @@ function sendChatMessage(text) {
   traceRows.style.cssText = 'align-self:flex-start; max-width:94%; font-size:11px; color:#8b949e; display:flex; flex-direction:column; gap:2px;';
   document.getElementById('chat-msgs').appendChild(traceRows);
 
-  const sel = document.getElementById('chat-project');
-  if (sel && !sel.dataset.bound) {
-    sel.dataset.bound = '1';
-    sel.addEventListener('change', () => setChatProject(sel.value, true));
-  }
   const payload = {
     message: text,
     context: {
@@ -2859,7 +2826,7 @@ function sendChatMessage(text) {
 function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   const reply = (done && done.strReply) || streamed || '';
   aiDiv.textContent = reply;
-  if (done && done.strProject) setChatProject(done.strProject, true);
+  if (done && done.strProject) setChatProject(done.strProject);
   const highlights = (done && done.vHighlights) || [];
   const trace = (done && done.vTrace) || steps;
   if (trace && trace.length) {

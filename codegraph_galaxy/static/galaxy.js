@@ -2755,7 +2755,6 @@ function provTypes() {
     { id: 'deepseek', label: 'DeepSeek', base: 'https://api.deepseek.com/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['deepseek-chat', 'deepseek-reasoner'] },
     { id: 'gemini', label: 'Google Gemini', base: 'https://generativelanguage.googleapis.com/v1beta/openai/', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['gemini-2.0-flash', 'gemini-1.5-flash'] },
     { id: 'groq', label: 'Groq (Llama)', base: 'https://api.groq.com/openai/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'] },
-    { id: 'openrouter', label: 'OpenRouter (Claude/Gemini/Llama)', base: 'https://openrouter.ai/api/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['anthropic/claude-3.5-sonnet', 'google/gemini-2.0-flash-001', 'meta-llama/llama-3.3-70b-instruct'] },
     { id: 'grok', label: 'xAI Grok', base: 'https://api.x.ai/v1', key: '', urlMode: 'fixed', keyMode: 'require', suggest: ['grok-3', 'grok-3-mini'] },
     { id: 'custom', label: 'Custom URL', base: '', urlMode: 'edit', keyMode: 'optional', suggest: [] },
   ];

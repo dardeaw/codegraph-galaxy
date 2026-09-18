@@ -800,6 +800,74 @@ function init3DGraph() {
     if (Graph) Graph.width(window.innerWidth).height(window.innerHeight);
   });
   ensureFileLabelLayer();
+  startFlightLoop();
+}
+
+// ==========================================
+// Keyboard flight (WASD/arrows + QE, Shift boost; CyberControl-style feel)
+// ==========================================
+const flightKeys = new Set();
+
+function flightIsTyping() {
+  const el = document.activeElement;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (flightIsTyping()) return;
+  const k = (e.key || '').toLowerCase();
+  if (['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) {
+    flightKeys.add(k);
+    if (k.startsWith('arrow')) e.preventDefault();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  flightKeys.delete((e.key || '').toLowerCase());
+});
+window.addEventListener('blur', () => flightKeys.clear());
+
+function flightOffset(fwd, right, up, keys, speed) {
+  const o = { x: 0, y: 0, z: 0 };
+  const add = (v, s) => { o.x += v.x * s; o.y += v.y * s; o.z += v.z * s; };
+  if (keys.has('w') || keys.has('arrowup')) add(fwd, speed);
+  if (keys.has('s') || keys.has('arrowdown')) add(fwd, -speed);
+  if (keys.has('a') || keys.has('arrowleft')) add(right, -speed);
+  if (keys.has('d') || keys.has('arrowright')) add(right, speed);
+  if (keys.has('e')) add(up, speed);
+  if (keys.has('q')) add(up, -speed);
+  return o;
+}
+
+function startFlightLoop() {
+  const tick = () => {
+    try {
+      if (flightKeys.size && typeof Graph !== 'undefined' && Graph && Graph.cameraPosition) {
+        const pos = Graph.cameraPosition();
+        const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+        const tgt = (ctrl && ctrl.target) ? ctrl.target : { x: 0, y: 0, z: 0 };
+        const fwd = { x: tgt.x - pos.x, y: tgt.y - pos.y, z: tgt.z - pos.z };
+        const dist = Math.sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z) || 1;
+        fwd.x /= dist; fwd.y /= dist; fwd.z /= dist;
+        const up = { x: 0, y: 1, z: 0 };
+        const right = {
+          x: fwd.y * up.z - fwd.z * up.y,
+          y: fwd.z * up.x - fwd.x * up.z,
+          z: fwd.x * up.y - fwd.y * up.x,
+        };
+        const speed = dist * 0.02 * (flightKeys.has('shift') ? 3.5 : 1);
+        const o = flightOffset(fwd, right, up, flightKeys, speed);
+        if (o.x || o.y || o.z) {
+          Graph.cameraPosition({ x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z });
+          if (ctrl && ctrl.target) {
+            ctrl.target.x += o.x; ctrl.target.y += o.y; ctrl.target.z += o.z;
+            if (typeof ctrl.update === 'function') ctrl.update();
+          }
+        }
+      }
+    } catch (e) { /* never break the render loop */ }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 // ==========================================

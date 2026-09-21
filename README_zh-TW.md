@@ -79,7 +79,7 @@ Code Graph Galaxy 提供原生跨平台桌面應用與命令列運行方案：
 
 - **Windows**：標準 NSIS 一鍵安裝檔 (`.exe`) 與免安裝單檔便攜版 (`.exe`)。
 - **macOS**：支援 Apple Silicon (M1/M2/M3/M4) 與 Intel 晶片之通用 DMG 安裝檔 (`.dmg`)。
-- **Linux**：AppImage 綠色版 (`.AppImage`) 與 Debian 安裝包 (`.deb`)。
+- **Linux**：AppImage 綠色版 (`.AppImage`) 與可攜式壓縮包 (`.tar.gz`)。
 
 ---
 

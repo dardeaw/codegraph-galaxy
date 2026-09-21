@@ -36,21 +36,21 @@ jobs:
 
       - name: Build Windows Binaries
         if: runner.os == 'Windows'
-        run: npm run dist:win
+        run: npm run dist:win -- --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build macOS Binaries
         if: runner.os == 'macOS'
-        run: npm run dist:mac
+        run: npm run dist:mac -- --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Linux Binaries
         if: runner.os == 'Linux'
-        run: npm run dist:linux
+        run: npm run dist:linux -- --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

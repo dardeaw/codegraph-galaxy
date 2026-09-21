@@ -81,7 +81,7 @@ Code Graph Galaxy is available as a native desktop application and a portable CL
 
 - **Windows**: Standard NSIS installer (`.exe`) and Portable standalone single-binary (`.exe`).
 - **macOS**: Universal DMG installer (`.dmg`) supporting both Apple Silicon (M1/M2/M3/M4) and Intel x64.
-- **Linux**: AppImage portable binary (`.AppImage`) and Debian package (`.deb`).
+- **Linux**: AppImage portable binary (`.AppImage`) and portable archive (`.tar.gz`).
 
 ---
 

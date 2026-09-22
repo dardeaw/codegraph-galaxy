@@ -310,6 +310,9 @@ const I18N = {
     trace_neighbors: 'Expand calls',
     trace_code: 'Read code',
     trace_blast: 'Impact',
+    trace_docs_search: 'Search docs',
+    trace_docs_read: 'Read doc',
+    trace_docs_related: 'Linked docs',
     help_title: 'How to use',
     help_mouse_t: '🖱 Mouse',
     help_mouse_rows: 'Drag: rotate the galaxy\nScroll: zoom in / out\nClick node: focus + inspector\nRight-click file/class: drill down\nDouble-click empty space: fit everything back',
@@ -474,6 +477,9 @@ const I18N = {
     trace_neighbors: '展開呼叫',
     trace_code: '讀取程式碼',
     trace_blast: '影響分析',
+    trace_docs_search: '搜尋文件',
+    trace_docs_read: '讀取文件',
+    trace_docs_related: '關聯文件',
     help_title: '使用說明',
     help_mouse_t: '🖱 滑鼠',
     help_mouse_rows: '拖曳：旋轉星系\n滾輪：放大 / 縮小\n點節點：聚焦＋開 Inspector\n右鍵點 file/class：往下鑽\n空地點兩下：全部收回置中',
@@ -3614,6 +3620,9 @@ function traceToolLabel(tool) {
     galaxy_get_neighbors: '🕸 ' + t('trace_neighbors'),
     galaxy_get_code: '📄 ' + t('trace_code'),
     galaxy_blast_radius: '💥 ' + t('trace_blast'),
+    galaxy_search_docs: '📚 ' + t('trace_docs_search'),
+    galaxy_read_doc: '📖 ' + t('trace_docs_read'),
+    galaxy_related_docs: '🔗 ' + t('trace_docs_related'),
   };
   return map[tool] || `🔍 ${tool}`;
 }

@@ -67,6 +67,7 @@ Adapt visual density on the fly without overwhelming the screen:
 - **Model & Provider Management**: Switch local Ollama models from the dropdown, or add OpenAI-compatible endpoints (OpenAI / DeepSeek / Gemini / Groq / xAI / llama.cpp / custom) via the provider settings dialog with presets and auto-fill. Keys stay on your machine (`~/.codegraph-galaxy/llm.json`).
 - **Chat Comfort**: Markdown answers with tables and code blocks, copy buttons, per-language system prompts (en-US / zh-TW), `Enter` to send / `Shift+Enter` for newline, draggable + resizable panel with memory.
 - **API**: `POST /api/chat`, `POST /api/chat/stream` (SSE), `GET /api/chat/node`, provider CRUD under `/api/chat/providers`. Backend env: `GALAXY_LLM_URL` / `GALAXY_LLM_MODEL`, or `GALAXY_LLM_BASE` / `GALAXY_LLM_KEY` / `GALAXY_LLM_CUSTOM_MODEL` for a remote endpoint.
+- **Docs-aware**: the agent also searches and reads repo markdown (TOC / sections) and links source files to their READMEs — code and docs answered together, file hits light up on the graph.
 
 ### 8. MCP-Native: Any Agent Can Query Your Code
 - The bundled CodeGraph indexer (1.6.0) ships a built-in MCP server — no extra package, it arrives with `npm install`.

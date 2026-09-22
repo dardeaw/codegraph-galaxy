@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from .graph import extract_code_snippet
 from .scanner import get_db_path
+from . import docs as docs_lib
 
 LLM_URL = os.environ.get("GALAXY_LLM_URL", "http://127.0.0.1:11434").rstrip("/")
 LLM_MODEL = os.environ.get("GALAXY_LLM_MODEL", "qwen3.5:9b")
@@ -211,16 +212,20 @@ def FnListRemoteModels(str_base: str, str_key: str = "") -> Dict[str, Any]:
 SYSTEM_PROMPTS = {
     "zh": (
         "你是 CodeGraph Galaxy 裡的程式碼助理。一律以繁體中文回答。"
-        "使用提供的工具查詢程式碼——絕不編造符號、檔案或行號。"
+        "使用提供的工具查詢程式碼與文件——絕不編造符號、檔案或行號。"
         "galaxy_search_symbols 預設搜尋 Explorer 選取範圍（未選則全庫），命中自帶專案名；"
         "把該專案名傳進 neighbors/code/blast_radius。"
+        "文件問題用 galaxy_search_docs/galaxy_read_doc 查 .md；"
+        "想知道某支程式有什麼文件可看，用 galaxy_related_docs。"
         "最終回答保持簡潔，節點 id 用反引號標註，例如 `auth:login`。"
     ),
     "en": (
         "You are a code assistant inside CodeGraph Galaxy. Always answer in English. "
-        "Use the provided tools to look up the codebase — never invent symbols, files or line numbers. "
+        "Use the provided tools to look up code and docs — never invent symbols, files or line numbers. "
         "galaxy_search_symbols searches the Explorer-selected scope (or all indexed projects); "
         "its hits carry project names — pass that project into neighbors/code/blast_radius. "
+        "For doc questions use galaxy_search_docs/galaxy_read_doc on .md files; "
+        "for docs linked to a source file use galaxy_related_docs. "
         "Keep the final answer concise and reference node ids in backticks like `auth:login`."
     ),
 }
@@ -274,6 +279,31 @@ TOOLS = [
             "project": {"type": "string", "description": "Project of the node (from the search hit)."},
             "depth": {"type": "integer", "description": "1 or 2."}},
             "required": ["node_id"]}}},
+    {"type": "function", "function": {
+        "name": "galaxy_search_docs",
+        "description": "Keyword-search markdown docs. Omit project to search ALL repos; hits carry project + path + line.",
+        "parameters": {"type": "object", "properties": {
+            "keyword": {"type": "string"},
+            "project": {"type": "string", "description": "Optional: restrict to one project."},
+            "limit": {"type": "integer", "description": "Max hits (1-15)."}},
+            "required": ["keyword"]}}},
+    {"type": "function", "function": {
+        "name": "galaxy_read_doc",
+        "description": "Read a markdown section by file path and heading (or line range) within one project.",
+        "parameters": {"type": "object", "properties": {
+            "file_path": {"type": "string"},
+            "project": {"type": "string"},
+            "heading": {"type": "string", "description": "Optional heading title."},
+            "start_line": {"type": "integer"},
+            "end_line": {"type": "integer"}},
+            "required": ["file_path"]}}},
+    {"type": "function", "function": {
+        "name": "galaxy_related_docs",
+        "description": "Docs linked to one source file (same-dir READMEs + docs/ mentioning it). The code<->docs bridge.",
+        "parameters": {"type": "object", "properties": {
+            "file_path": {"type": "string"},
+            "project": {"type": "string"}},
+            "required": ["file_path"]}}},
 ]
 
 
@@ -467,7 +497,7 @@ class GalaxyChatProvider:
 
     @staticmethod
     def _FnParseNonStream(dicRes: Dict[str, Any], str_proto: str) -> Tuple[str, List[Dict[str, Any]]]:
-        """Returns (content, tool_calls[{name, args}]) for either protocol."""
+        """Returns (content, tool_calls[{id|None, name, args}]) for either protocol."""
         if str_proto == "openai":
             dicMsg = ((dicRes.get("choices") or [{}])[0].get("message")) or {}
             strContent = dicMsg.get("content") or ""
@@ -475,7 +505,8 @@ class GalaxyChatProvider:
             for dicCall in dicMsg.get("tool_calls") or []:
                 dicFn = (dicCall or {}).get("function") or {}
                 oArgs = dicFn.get("arguments") or {}
-                vCalls.append({"name": str(dicFn.get("name") or ""),
+                vCalls.append({"id": (dicCall or {}).get("id"),
+                               "name": str(dicFn.get("name") or ""),
                                "args": json.loads(oArgs) if isinstance(oArgs, str) else (oArgs or {})})
             return strContent, vCalls
         dicMsg = dicRes.get("message") or {}
@@ -484,7 +515,8 @@ class GalaxyChatProvider:
         for dicCall in dicMsg.get("tool_calls") or []:
             dicFn = (dicCall or {}).get("function") or {}
             oArgs = dicFn.get("arguments") or {}
-            vCalls.append({"name": str(dicFn.get("name") or ""),
+            vCalls.append({"id": (dicCall or {}).get("id"),
+                           "name": str(dicFn.get("name") or ""),
                            "args": json.loads(oArgs) if isinstance(oArgs, str) else (oArgs or {})})
         return strContent, vCalls
 
@@ -648,7 +680,109 @@ class GalaxyChatProvider:
             strSumm = _T(dicCtx, f"[{strProj}] 讀取 {dicArgs.get('file_path')}:{nStart}-{nEnd}",
                          f"[{strProj}] read {dicArgs.get('file_path')}:{nStart}-{nEnd}")
             return dicSnippet, strSumm, [], strProj, []
+        if strName == "galaxy_search_docs":
+            return self._FnDocsSearch(str(dicArgs.get("keyword", "")),
+                                      int(dicArgs.get("limit", 10) or 10),
+                                      str(dicArgs.get("project", "") or ""), dicCtx)
+        if strName == "galaxy_read_doc":
+            return self._FnDocsRead(str(dicArgs.get("file_path", "")),
+                                    str(dicArgs.get("project", "") or ""),
+                                    str(dicArgs.get("heading", "") or ""),
+                                    int(dicArgs.get("start_line", 0) or 0),
+                                    int(dicArgs.get("end_line", 0) or 0), dicCtx)
+        if strName == "galaxy_related_docs":
+            return self._FnDocsRelated(str(dicArgs.get("file_path", "")),
+                                       str(dicArgs.get("project", "") or ""), dicCtx)
         return {"error": f"unknown tool {strName}"}, _T(dicCtx, "未知工具", "Unknown tool"), [], None, []
+
+    # ---------------- docs tools (query-time code<->docs bridge) ----------------
+    def _FnDocsRepos(self, str_only: str, dicCtx: Dict[str, Any]) -> Tuple[List[Tuple[str, str, str]], str]:
+        """[(name, db, repo)] in scope (+optional single-project pin)."""
+        vScope = self._FnScopeProjects(dicCtx)
+        if str_only:
+            strHit, vClose = self._FnMatchProject(str_only, vScope)
+            if strHit and self._fn_resolve_db:
+                t = self._fn_resolve_db(strHit)
+                if t:
+                    return ([(strHit, t[0], t[1])], "")
+            if vClose:
+                return [], _T(dicCtx, "專案不明確：" + "、".join(vClose),
+                              "Ambiguous project: " + ", ".join(vClose))
+            return [], _T(dicCtx, f"找不到專案「{str_only}」",
+                          f'Project "{str_only}" not found')
+        v_out: List[Tuple[str, str, str]] = []
+        if self._fn_resolve_db:
+            for strName in vScope:
+                try:
+                    t = self._fn_resolve_db(strName)
+                    if t:
+                        v_out.append((strName, t[0], t[1]))
+                except Exception:
+                    continue
+        return v_out, ""
+
+    def _FnDocsSearch(self, strKeyword: str, nLimit: int, str_only: str,
+                      dicCtx: Dict[str, Any]) -> Tuple[Any, str, List[str], Optional[str], List[Dict[str, Any]]]:
+        vRepos, strErr = self._FnDocsRepos(str_only, dicCtx)
+        if strErr:
+            return {"error": strErr}, strErr, [], None, []
+        nLimit = max(1, min(15, nLimit or 10))
+        vHits: List[Dict[str, Any]] = []
+        for strName, _, strRepo in vRepos:
+            try:
+                for h in docs_lib.FnSearchDocs(strRepo, strKeyword, 5):
+                    h["project"] = strName
+                    vHits.append(h)
+                    if len(vHits) >= nLimit:
+                        break
+            except Exception:
+                continue
+            if len(vHits) >= nLimit:
+                break
+        strNames = "、".join(f"{h['path']}@{h['project']}" for h in vHits[:6]) or "none"
+        return vHits, _T(dicCtx, f"文件命中 {len(vHits)} 處：{strNames}",
+                         f"Docs hits {len(vHits)}: {strNames}"), [], None, []
+
+    def _FnDocsRead(self, str_file: str, str_only: str, str_heading: str,
+                    n_start: int, n_end: int, dicCtx: Dict[str, Any]) -> Tuple[Any, str, List[str], Optional[str], List[Dict[str, Any]]]:
+        vRepos, strErr = self._FnDocsRepos(str_only, dicCtx)
+        if strErr:
+            return {"error": strErr}, strErr, [], None, []
+        if not vRepos:
+            return ({"error": "no repo"}, _T(dicCtx, "範圍內無已索引的專案", "No indexed projects in scope"),
+                    [], None, [])
+        strName, strDb, strRepo = vRepos[0]
+        try:
+            dicSec = docs_lib.FnDocSection(strRepo, str_file, str_heading, n_start, n_end)
+        except ValueError as oErr:
+            return {"error": str(oErr)}, str(oErr), [], None, []
+        vNodes: List[Dict[str, Any]] = []
+        strFid = docs_lib.FnFileNodeId(strDb, str_file)
+        if strFid:
+            vNodes.append({"id": strFid, "name": os.path.basename(str_file),
+                           "kind": "file", "project": strName})
+        strSumm = _T(dicCtx, f"[{strName}] 讀文件 {str_file}",
+                     f"[{strName}] read doc {str_file}")
+        return dicSec, strSumm, [strFid] if strFid else [], strName, vNodes
+
+    def _FnDocsRelated(self, str_file: str, str_only: str,
+                       dicCtx: Dict[str, Any]) -> Tuple[Any, str, List[str], Optional[str], List[Dict[str, Any]]]:
+        vRepos, strErr = self._FnDocsRepos(str_only, dicCtx)
+        if strErr:
+            return {"error": strErr}, strErr, [], None, []
+        if not vRepos:
+            return ([], _T(dicCtx, "範圍內無已索引的專案", "No indexed projects in scope"),
+                    [], None, [])
+        strName, strDb, strRepo = vRepos[0]
+        try:
+            vDocs = docs_lib.FnRelatedDocs(strRepo, str_file)
+        except ValueError as oErr:
+            return {"error": str(oErr)}, str(oErr), [], None, []
+        for d in vDocs:
+            d["project"] = strName
+        strSumm = _T(dicCtx, f"[{strName}] {str_file} 關聯文件 {len(vDocs)} 份",
+                     f"[{strName}] {len(vDocs)} docs linked to {str_file}")
+        return vDocs, strSumm, [], strName, []
 
     # ---------------- target repo ----------------
     def _FnKnownIndexed(self) -> List[str]:
@@ -724,7 +858,21 @@ class GalaxyChatProvider:
                     dicRes = json.loads(oRes.read().decode("utf-8"))
                 strProto = self._FnResolveTarget(str_model, str_provider)[0]
                 strContent, vCalls = self._FnParseNonStream(dicRes, strProto)
-                vMessages.append({"role": "assistant", "content": strContent})
+                if strProto == "openai":
+                    # Strict servers (ninfer et al) require tool_call_id echo:
+                    # inject ids into the assistant message and mirror them back.
+                    vEcho = []
+                    for n, dicCall in enumerate(vCalls):
+                        strCid = dicCall.get("id") or f"call_{len(vTrace)}_{n}"
+                        dicCall["id"] = strCid
+                        vEcho.append({"id": strCid, "type": "function",
+                                      "function": {"name": dicCall.get("name") or "",
+                                                   "arguments": json.dumps(dicCall.get("args") or {},
+                                                                           ensure_ascii=False)}})
+                    vMessages.append({"role": "assistant", "content": strContent,
+                                      "tool_calls": vEcho})
+                else:
+                    vMessages.append({"role": "assistant", "content": strContent})
                 if not vCalls:
                     strReply = strContent.strip() or "(empty reply)"
                     return strReply, vTrace, vHighlights, None, strResolved
@@ -746,11 +894,22 @@ class GalaxyChatProvider:
                         strResult = json.dumps(oResult, ensure_ascii=False)[:6000]
                     except Exception:
                         strResult = str(oResult)[:6000]
-                    vMessages.append({"role": "tool", "content": strResult})
+                    dicToolMsg: Dict[str, Any] = {"role": "tool", "content": strResult}
+                    if strProto == "openai" and dicCall.get("id"):
+                        dicToolMsg["tool_call_id"] = dicCall["id"]
+                    vMessages.append(dicToolMsg)
             return _T(dicCtx, "（達到工具呼叫上限，僅顯示已查到的部分結果）",
                         "(tool-call budget exhausted — showing what was found)"), vTrace, vHighlights, None, strResolved
         except Exception as oErr:
             strErr = f"{type(oErr).__name__}: {oErr}"
+            try:
+                import urllib.error as _urlerr
+                if isinstance(oErr, _urlerr.HTTPError):
+                    strBody = oErr.read().decode("utf-8", "replace")[:300]
+                    if strBody:
+                        strErr += f" | upstream: {strBody}"
+            except Exception:
+                pass
             if "URLError" in type(oErr).__name__ or "urlopen error" in strErr:
                 strMsg = _T(dicCtx,
                             "連不上 LLM（{0}）。請檢查 provider 設定（⚙）或網路。".format(self._str_base),

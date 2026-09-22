@@ -65,6 +65,7 @@
 - **模型與服務商管理**：下拉切本地 Ollama 模型，或用設定對話框加 OpenAI 相容端點（OpenAI / DeepSeek / Gemini / Groq / xAI / llama.cpp / 自訂），內建 presets 與自動帶入。Key 只存本機 (`~/.codegraph-galaxy/llm.json`)。
 - **對話體驗**：Markdown 回答（含表格與代碼塊）、複製鍵、中英雙語提示詞、`Enter` 送出 / `Shift+Enter` 換行，可拖可縮、位置記憶。
 - **API**：`POST /api/chat`、`POST /api/chat/stream` (SSE)、`GET /api/chat/node`，provider 增刪改查在 `/api/chat/providers`。後端環境變數：`GALAXY_LLM_URL` / `GALAXY_LLM_MODEL`，或遠端端點用 `GALAXY_LLM_BASE` / `GALAXY_LLM_KEY` / `GALAXY_LLM_CUSTOM_MODEL`。
+- **懂文件**：agent 同時搜尋、讀取各庫 markdown（TOC / 段落），並把程式檔連到它的 README —— code 跟文件一起回答，文件命中照樣在圖上打光。
 
 ### 8. MCP 原生：所有 Agent 都能查你的 code
 - 內建的 CodeGraph indexer（1.6.0）自帶 MCP server —— `npm install` 就有了，不用另裝。

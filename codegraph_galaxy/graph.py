@@ -4,6 +4,8 @@ import sys
 import sqlite3
 from typing import Dict, List, Optional, Tuple, Any
 
+from . import docs as docs_lib
+
 def fetch_project_graph(
     db_path: str,
     proj_name: str,
@@ -74,11 +76,67 @@ def fetch_project_graph(
                     "cross_project": False
                 })
 
+        if not parent_id:
+            _FnMergeDocNodes(proj_name, repo_path, cur, nodes, links, loaded_node_ids)
+
         conn.close()
     except Exception as ex:
         print(f"Error querying db for {proj_name}: {ex}", file=sys.stderr)
 
     return nodes, links
+
+
+def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
+                     nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
+                     loaded_node_ids: set) -> None:
+    """Merge markdown docs as first-class graph citizens (overview loads only).
+
+    codegraph CLI never indexes .md, so docs are synthesized here: one `doc`
+    node per markdown file plus `doc` edges to same-directory source files
+    (capped per directory). Ids are `doc:{project}:{path}`, globally unique.
+    """
+    try:
+        v_docs = docs_lib.FnListDocs(repo_path)
+    except Exception:
+        return
+    if not v_docs:
+        return
+    v_by_dir: Dict[str, List[str]] = {}
+    for d in v_docs:
+        v_by_dir.setdefault(os.path.dirname(d["path"]), []).append(d["path"])
+    for str_dir, v_paths in v_by_dir.items():
+        str_like = (str_dir + "/%") if str_dir else "%"
+        try:
+            v_fids = [r2[0] for r2 in cur.execute(
+                "SELECT id FROM nodes WHERE kind = 'file' AND file_path LIKE ? LIMIT 25",
+                (str_like,)).fetchall()]
+        except Exception:
+            v_fids = []
+        for str_rel in v_paths:
+            str_did = f"doc:{proj_name}:{str_rel}"
+            if str_did in loaded_node_ids:
+                continue
+            nodes.append({
+                "id": str_did,
+                "name": os.path.basename(str_rel),
+                "kind": "doc",
+                "project": proj_name,
+                "project_path": repo_path,
+                "file_path": str_rel,
+                "start_line": 1,
+                "end_line": None,
+                "qualified_name": str_rel,
+                "signature": ""
+            })
+            loaded_node_ids.add(str_did)
+            for str_fid in v_fids:
+                if str_fid in loaded_node_ids:
+                    links.append({
+                        "source": str_fid,
+                        "target": str_did,
+                        "kind": "doc",
+                        "cross_project": False
+                    })
 
 def extract_code_snippet(
     repo_path: str,

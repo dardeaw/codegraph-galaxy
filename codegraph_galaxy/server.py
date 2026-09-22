@@ -233,6 +233,92 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         data = request.get_json(silent=True) or {}
         return jsonify(FnListRemoteModels(data.get("base", ""), data.get("key", "")))
 
+    # ---------------- docs API (same engine as the chat docs tools) ----------------
+    def _docs_ctx():
+        v_projects = [s.strip() for s in (request.args.get("projects", "") or "").split(",") if s.strip()]
+        return {"vProjects": v_projects} if v_projects else {}
+
+    def _docs_single():
+        """Single-repo resolution for direct docs endpoints.
+
+        Explicit project (fuzzy ok), or the only repo in scope — otherwise 400
+        instead of silently serving the first repo.
+        """
+        prov = _make_chat_provider()
+        v_repos, str_err = prov._FnDocsRepos(request.args.get("project", ""), _docs_ctx())
+        if str_err or not v_repos:
+            return None, ({"bSuccess": False, "strError": str_err or "請指定 project"}, 400)
+        if not request.args.get("project", "") and len(v_repos) != 1:
+            names = [n for n, _, _ in v_repos[:12]]
+            return None, ({"bSuccess": False,
+                            "strError": "請指定 project 目前：" + "、".join(names)}, 400)
+        return (prov, v_repos[0]), (None, 200)
+
+    @app.route("/api/docs/list", methods=["GET"])
+    def docs_list():
+        single, err = _docs_single()
+        if single is None:
+            return jsonify(err[0]), err[1]
+        _, (str_name, _, str_repo) = single
+        from . import docs as docs_lib
+        try:
+            return jsonify({"bSuccess": True, "project": str_name,
+                            "files": docs_lib.FnListDocs(str_repo)})
+        except Exception as e:
+            return jsonify({"bSuccess": False, "strError": str(e)}), 500
+
+    @app.route("/api/docs/toc", methods=["GET"])
+    def docs_toc():
+        single, err = _docs_single()
+        if single is None:
+            return jsonify(err[0]), err[1]
+        _, (str_name, _, str_repo) = single
+        from . import docs as docs_lib
+        try:
+            return jsonify({"bSuccess": True, "project": str_name,
+                            "path": request.args.get("path", ""),
+                            "toc": docs_lib.FnDocToc(str_repo, request.args.get("path", ""))})
+        except ValueError as e:
+            return jsonify({"bSuccess": False, "strError": str(e)}), 400
+
+    @app.route("/api/docs/section", methods=["GET"])
+    def docs_section():
+        single, err = _docs_single()
+        if single is None:
+            return jsonify(err[0]), err[1]
+        _, (str_name, _, str_repo) = single
+        from . import docs as docs_lib
+        try:
+            dic_sec = docs_lib.FnDocSection(
+                str_repo, request.args.get("path", ""),
+                request.args.get("heading", ""),
+                int(request.args.get("start", 0) or 0),
+                int(request.args.get("end", 0) or 0))
+            return jsonify({"bSuccess": True, "project": str_name, **dic_sec})
+        except ValueError as e:
+            return jsonify({"bSuccess": False, "strError": str(e)}), 400
+
+    @app.route("/api/docs/search", methods=["GET"])
+    def docs_search():
+        prov = _make_chat_provider()
+        o_res, _, _, _, _ = prov._FnDocsSearch(
+            request.args.get("q", ""), 15, request.args.get("project", ""), _docs_ctx())
+        if isinstance(o_res, dict) and o_res.get("error"):
+            return jsonify({"bSuccess": False, "strError": o_res["error"]}), 400
+        return jsonify({"bSuccess": True, "hits": o_res})
+
+    @app.route("/api/docs/related", methods=["GET"])
+    def docs_related():
+        single, err = _docs_single()
+        if single is None:
+            return jsonify(err[0]), err[1]
+        prov, (str_name, _, str_repo) = single
+        o_res, _, _, _, _ = prov._FnDocsRelated(
+            request.args.get("path", ""), str_name, {})
+        if isinstance(o_res, dict) and o_res.get("error"):
+            return jsonify({"bSuccess": False, "strError": o_res["error"]}), 400
+        return jsonify({"bSuccess": True, "docs": o_res})
+
     @app.route("/api/chat", methods=["POST"])
     def chat():
         data = request.get_json(silent=True) or {}

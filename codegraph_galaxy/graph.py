@@ -166,6 +166,47 @@ def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
                     "kind": "doc",
                     "cross_project": False
                 })
+    _FnLinkDocToDoc(proj_name, repo_path, nodes, links, loaded_node_ids)
+
+
+def _FnLinkDocToDoc(proj_name: str, repo_path: str,
+                    nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
+                    loaded_node_ids: set) -> None:
+    """Doc<->doc edges: a doc mentioning another doc's basename or relative
+    path earns a link. Same 60KB cap, 8 links per doc.
+    """
+    v_docs = [(n["id"], n["file_path"]) for n in nodes
+              if n.get("kind") == "doc" and n.get("project") == proj_name]
+    if len(v_docs) < 2:
+        return
+    v_bodies: Dict[str, str] = {}
+    for str_did, str_rel in v_docs:
+        try:
+            with open(os.path.join(repo_path, str_rel), "r",
+                      encoding="utf-8", errors="replace") as f:
+                v_bodies[str_did] = f.read(60000).lower()
+        except OSError:
+            continue
+    for str_did, str_rel in v_docs:
+        str_body = v_bodies.get(str_did, "")
+        if not str_body:
+            continue
+        n_links = 0
+        for str_oid, str_orel in v_docs:
+            if str_oid == str_did:
+                continue
+            str_base = os.path.basename(str_orel).lower()
+            if (str_base in str_body or str_orel.lower().replace("\\", "/") in str_body) \
+                    and str_oid in loaded_node_ids:
+                links.append({
+                    "source": str_did,
+                    "target": str_oid,
+                    "kind": "doc",
+                    "cross_project": False
+                })
+                n_links += 1
+                if n_links >= 8:
+                    break
 
 def extract_code_snippet(
     repo_path: str,

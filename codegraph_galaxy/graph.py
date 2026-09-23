@@ -1,5 +1,6 @@
 """Database queries, AST graph topology extraction, and source snippet retrieval."""
 import os
+import re
 import sys
 import sqlite3
 from typing import Dict, List, Optional, Tuple, Any
@@ -153,7 +154,9 @@ def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
                               encoding="utf-8", errors="replace") as f:
                         str_body = f.read(60000).lower()
                     v_matched = [fid for fid, fp in v_files
-                                 if len(_FnDocStem(fp)) > 2 and _FnDocStem(fp) in str_body][:8]
+                                 if len(_FnDocStem(fp)) > 2 and re.search(
+                                     r"(?<![a-z0-9_])" + re.escape(_FnDocStem(fp)) + r"(?![a-z0-9_])",
+                                     str_body)][:8]
                 except OSError:
                     v_matched = []
             for str_fid in v_matched[:8]:

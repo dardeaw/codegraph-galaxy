@@ -2231,7 +2231,9 @@ function openDrawer(node) {
       .then(res => res.json())
       .then(data => {
         if (data.text) {
-          codeContainer.textContent = data.text;
+          codeContainer.innerHTML = (typeof chatRenderMarkdown === 'function')
+            ? chatRenderMarkdown(data.text)
+            : escapeHtml(data.text);
           document.getElementById('code-lines-badge').innerText = `Line ${data.start_line} - ${data.end_line}`;
         } else {
           codeContainer.innerHTML = '<span style="color:#6e7681;">// Doc unavailable</span>';

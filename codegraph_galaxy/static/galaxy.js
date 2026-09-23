@@ -1219,6 +1219,16 @@ function loadTreeData() {
     .catch(() => { /* keep last good tree */ });
 }
 
+// A markdown file on disk always has a doc twin (merged doc nodes cover all
+// on-disk .md); folder rows prefer the doc identity so clicks preview markdown.
+function treeDocForFile(projName, cleanFilePath) {
+  const list = (typeof treeData !== 'undefined' && treeData.nodes) || [];
+  for (const n of list) {
+    if (n && n.kind === 'doc' && n.project === projName && (n.file_path || '') === cleanFilePath) return n;
+  }
+  return null;
+}
+
 // Nest flat symbols under their parents via qualified_name
 // (StateMachine::__init__ under StateMachine); unknown parents stay top-level.
 function treeNestSymbols(symList) {
@@ -1602,6 +1612,16 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
 
     const fileChildrenEl = document.createElement('div');
     fileChildrenEl.className = `tree-children ${isFileOpen ? 'open' : ''}`;
+    const docTwin = treeDocForFile(projName, cleanFilePath);
+    if (docTwin) {
+      const tag = fileNodeEl.querySelector('.node-kind-tag');
+      if (tag) {
+        tag.textContent = 'DOC';
+        tag.style.color = '#e3b341';
+        tag.style.border = '1px solid #e3b34155';
+        tag.style.background = '#e3b34114';
+      }
+    }
 
     const arrow = fileNodeEl.querySelector('.tree-arrow');
     if (arrow) {
@@ -1614,6 +1634,15 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
 
     fileNodeEl.onclick = () => {
       selectTreeNode(fileNodeEl);
+      const twin = treeDocForFile(projName, cleanFilePath);
+      if (twin) {
+        openDrawer(twin);
+        const g = (typeof findGraphNode === 'function') ? findGraphNode(twin.id) : null;
+        const target = g || twin;
+        highlightScope('node', target);
+        focusOnNode(target);
+        return;
+      }
       if (isUnindexed) {
         openUnindexedFileDrawer(fileNode);
       } else {

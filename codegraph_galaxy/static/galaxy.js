@@ -785,7 +785,15 @@ function init3DGraph() {
   Graph = ForceGraph3D()(elem)
     .backgroundColor('#090d13')
     .nodeId('id')
-    .nodeLabel(n => `${n.name} (${n.kind})\n${n.project} · ${n.file_path || ''}`)
+    .nodeLabel(n => {
+      const color = KIND_COLORS[n.kind] || '#58a6ff';
+      const name = escapeHtml(n.name || '');
+      const kind = escapeHtml(n.kind || '');
+      const proj = escapeHtml(n.project || '');
+      const fp = escapeHtml(n.file_path || '');
+      return `<div style="font-weight:700;color:${color};">${name} <span style="font-weight:400;opacity:0.85;">(${kind})</span></div>`
+        + `<div style="color:#8b949e;font-size:11px;">${proj}${fp ? ` · ${fp}` : ''}</div>`;
+    })
     .nodeColor(n => {
       if (highlightNodes.size > 0) {
         return highlightNodes.has(n.id) ? (KIND_COLORS[n.kind] || '#58a6ff') : '#1c212888';

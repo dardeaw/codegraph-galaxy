@@ -86,14 +86,27 @@ def fetch_project_graph(
     return nodes, links
 
 
+def _FnDocStem(str_name: str) -> str:
+    """Normalized stem for same-name matching (test_x.py <-> x.md)."""
+    stem = os.path.splitext(os.path.basename(str_name or ""))[0].lower()
+    for prefix in ("test_", "spec_", "tests_"):
+        if stem.startswith(prefix):
+            stem = stem[len(prefix):]
+            break
+    if stem.endswith("_test") or stem.endswith("_spec"):
+        stem = stem.rsplit("_", 1)[0]
+    return stem
+
+
 def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
                      nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
                      loaded_node_ids: set) -> None:
     """Merge markdown docs as first-class graph citizens (overview loads only).
 
     codegraph CLI never indexes .md, so docs are synthesized here: one `doc`
-    node per markdown file plus `doc` edges to same-directory source files
-    (capped per directory). Ids are `doc:{project}:{path}`, globally unique.
+    node per markdown file. Edges are earned, not blanket-connected:
+    same-stem match (Chart.md <-> Chart.ts) or the doc body mentioning the
+    module stem. Unrelated co-location creates no edge.
     """
     try:
         v_docs = docs_lib.FnListDocs(repo_path)
@@ -107,11 +120,12 @@ def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
     for str_dir, v_paths in v_by_dir.items():
         str_like = (str_dir + "/%") if str_dir else "%"
         try:
-            v_fids = [r2[0] for r2 in cur.execute(
-                "SELECT id FROM nodes WHERE kind = 'file' AND file_path LIKE ? LIMIT 25",
+            v_files = [(r2[0], r2[1]) for r2 in cur.execute(
+                "SELECT id, file_path FROM nodes WHERE kind = 'file' AND file_path LIKE ? LIMIT 60",
                 (str_like,)).fetchall()]
         except Exception:
-            v_fids = []
+            v_files = []
+        v_files = [(fid, fp) for fid, fp in v_files if fid in loaded_node_ids]
         for str_rel in v_paths:
             str_did = f"doc:{proj_name}:{str_rel}"
             if str_did in loaded_node_ids:
@@ -129,14 +143,26 @@ def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
                 "signature": ""
             })
             loaded_node_ids.add(str_did)
-            for str_fid in v_fids:
-                if str_fid in loaded_node_ids:
-                    links.append({
-                        "source": str_fid,
-                        "target": str_did,
-                        "kind": "doc",
-                        "cross_project": False
-                    })
+            if not v_files:
+                continue
+            str_stem = _FnDocStem(str_rel)
+            v_matched = [fid for fid, fp in v_files if _FnDocStem(fp) == str_stem]
+            if not v_matched:
+                try:
+                    with open(os.path.join(repo_path, str_rel), "r",
+                              encoding="utf-8", errors="replace") as f:
+                        str_body = f.read(60000).lower()
+                    v_matched = [fid for fid, fp in v_files
+                                 if len(_FnDocStem(fp)) > 2 and _FnDocStem(fp) in str_body][:8]
+                except OSError:
+                    v_matched = []
+            for str_fid in v_matched[:8]:
+                links.append({
+                    "source": str_fid,
+                    "target": str_did,
+                    "kind": "doc",
+                    "cross_project": False
+                })
 
 def extract_code_snippet(
     repo_path: str,

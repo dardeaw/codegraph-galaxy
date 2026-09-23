@@ -135,6 +135,26 @@ function handleCodeReferenceClick(e) {
     if (typeof openDrawer === 'function') {
       openDrawer(targetNode);
     }
+  } else if (nodeId && typeof ensureChatNodeVisible === 'function') {
+    // Not in the current view (e.g. arch hides functions): walk up to the
+    // nearest revealed ancestor instead of dying silently.
+    ensureChatNodeVisible(nodeId, proj).then((n) => {
+      if (!n) {
+        showToast(t('chat_no_nodes'));
+        return;
+      }
+      if (typeof highlightScope === 'function') highlightScope('node', n);
+      if (typeof focusOnNode === 'function') focusOnNode(n);
+      if (typeof syncExplorerSelection === 'function') {
+        try { syncExplorerSelection(n); } catch (e) { /* ignore */ }
+      }
+      if (typeof openDrawer === 'function') openDrawer(n);
+      if (n._viaAncestor) {
+        showToast(t('chat_show_parent', { name: n.name || n.id, kind: n.kind || '' }));
+      }
+    }).catch(() => {
+      showToast(t('chat_no_nodes'));
+    });
   }
 }
 
@@ -3988,9 +4008,14 @@ function docSymbolEntries(project) {
     const arr = byName.get(key);
     if (!arr.some((x) => x.id === n.id)) arr.push(n);
   }
-  return Array.from(byName.entries())
-    .sort((a, b) => b[0].length - a[0].length)
-    .slice(0, 800);
+  // Filenames always survive (few, high click value); identifiers fill the rest.
+  const files = [], idents = [];
+  for (const [name, arr] of byName) {
+    (name.includes('.') ? files : idents).push([name, arr]);
+  }
+  files.sort((a, b) => b[0].length - a[0].length);
+  idents.sort((a, b) => b[0].length - a[0].length);
+  return files.concat(idents).slice(0, 1000);
 }
 
 function escapeRegex(s) {

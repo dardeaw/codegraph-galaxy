@@ -2260,9 +2260,11 @@ function openDrawer(node) {
       .then(res => res.json())
       .then(data => {
         if (data.text) {
-          codeContainer.innerHTML = (typeof chatRenderMarkdown === 'function')
-            ? chatRenderMarkdown(data.text)
-            : escapeHtml(data.text);
+          codeContainer.innerHTML = (typeof renderDocMarkdown === 'function')
+            ? renderDocMarkdown(data.text, node.project)
+            : ((typeof chatRenderMarkdown === 'function')
+              ? chatRenderMarkdown(data.text)
+              : escapeHtml(data.text));
           document.getElementById('code-lines-badge').innerText = `Line ${data.start_line} - ${data.end_line}`;
         } else {
           codeContainer.innerHTML = '<span style="color:#6e7681;">// Doc unavailable</span>';
@@ -3960,6 +3962,79 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   document.dispatchEvent(new CustomEvent('rd:chat-message', {
     detail: { strReply: reply, vHighlights: highlights, vTrace: trace },
   }));
+}
+
+// Doc symbol超連結: raw md → placeholder → markdown → code-ref-token.
+// Placeholder 穿過轉義與排版, 還原時跳過 HTML 標籤區, 沿用全域 click 跳轉。
+function docSymbolEntries(project) {
+  const list = [];
+  try {
+    if (typeof treeData !== 'undefined' && treeData.nodes) {
+      for (const n of treeData.nodes) list.push(n);
+    }
+    if (typeof rawData !== 'undefined' && rawData.nodes) {
+      for (const n of rawData.nodes) list.push(n);
+    }
+  } catch (e) { /* ignore */ }
+  const byName = new Map();
+  for (const n of list) {
+    if (!n || !n.name || typeof n.name !== 'string') continue;
+    const key = n.name.trim();
+    if (!key || key.length < 3) continue;
+    const dotted = key.includes('.');
+    if (!dotted && !/^[A-Za-z_$][\w$]*$/.test(key)) continue;
+    if (dotted && (/\s/.test(key) || key.length < 5)) continue;
+    if (!byName.has(key)) byName.set(key, []);
+    const arr = byName.get(key);
+    if (!arr.some((x) => x.id === n.id)) arr.push(n);
+  }
+  return Array.from(byName.entries())
+    .sort((a, b) => b[0].length - a[0].length)
+    .slice(0, 800);
+}
+
+function escapeRegex(s) {
+  return String(s).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function renderDocMarkdown(rawText, project) {
+  const entries = docSymbolEntries(project);
+  const table = [];
+  let text = String(rawText || '');
+  if (entries.length) {
+    const parts = entries.map(([name]) => {
+      if (name.includes('.')) return `(?<![\\w$.])${escapeRegex(name)}\\b`;
+      return `\\b${escapeRegex(name)}\\b`;
+    });
+    let rx = null;
+    try {
+      rx = new RegExp(`(${parts.join('|')})`, 'g');
+    } catch (e) { rx = null; }
+    if (rx) {
+      const byName = new Map(entries);
+      text = text.replace(rx, (matched) => {
+        const cands = byName.get(matched) || [];
+        const node = (project && cands.find((n) => n.project === project)) || cands[0];
+        if (!node) return matched;
+        table.push({ node, matched });
+        return `D${table.length - 1}`;
+      });
+    }
+  }
+  let html = chatRenderMarkdown(text);
+  html = html.split(/(<[^>]*>)/g).map((seg, idx) => {
+    if (idx % 2 === 1) return seg;
+    return seg.replace(/D(\d+)/g, (m, num) => {
+      const entry = table[parseInt(num, 10)];
+      if (!entry) return m;
+      const node = entry.node;
+      const color = KIND_COLORS[node.kind] || '#58a6ff';
+      const kindTag = (node.kind || 'symbol').toUpperCase();
+      const projTag = node.project || '';
+      return `<span class="code-ref-token" data-symbol-name="${escapeHtml(node.name)}" data-node-id="${escapeHtml(node.id || '')}" data-project="${escapeHtml(projTag)}" style="color:${color}; border-color:${color}88;" title="&#128279; [${kindTag}] ${escapeHtml(node.name)} (${escapeHtml(projTag)})&#10;&#128073; Click to jump in 3D Galaxy & Explorer">${escapeHtml(entry.matched)}</span>`;
+    });
+  }).join('');
+  return html;
 }
 
 function traceNodeColor(kind) {

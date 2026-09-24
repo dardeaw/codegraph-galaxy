@@ -1,8 +1,11 @@
 """Database queries, AST graph topology extraction, and source snippet retrieval."""
 import os
+import re
 import sys
 import sqlite3
 from typing import Dict, List, Optional, Tuple, Any
+
+from . import docs as docs_lib
 
 def fetch_project_graph(
     db_path: str,
@@ -74,11 +77,136 @@ def fetch_project_graph(
                     "cross_project": False
                 })
 
+        if not parent_id:
+            _FnMergeDocNodes(proj_name, repo_path, cur, nodes, links, loaded_node_ids)
+
         conn.close()
     except Exception as ex:
         print(f"Error querying db for {proj_name}: {ex}", file=sys.stderr)
 
     return nodes, links
+
+
+def _FnDocStem(str_name: str) -> str:
+    """Normalized stem for same-name matching (test_x.py <-> x.md)."""
+    stem = os.path.splitext(os.path.basename(str_name or ""))[0].lower()
+    for prefix in ("test_", "spec_", "tests_"):
+        if stem.startswith(prefix):
+            stem = stem[len(prefix):]
+            break
+    if stem.endswith("_test") or stem.endswith("_spec"):
+        stem = stem.rsplit("_", 1)[0]
+    return stem
+
+
+def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
+                     nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
+                     loaded_node_ids: set) -> None:
+    """Merge markdown docs as first-class graph citizens (overview loads only).
+
+    codegraph CLI never indexes .md, so docs are synthesized here: one `doc`
+    node per markdown file. Edges are earned, not blanket-connected:
+    same-stem match (Chart.md <-> Chart.ts) or the doc body mentioning the
+    module stem. Unrelated co-location creates no edge.
+    """
+    try:
+        v_docs = docs_lib.FnListDocs(repo_path)
+    except Exception:
+        return
+    if not v_docs:
+        return
+    v_by_dir: Dict[str, List[str]] = {}
+    for d in v_docs:
+        v_by_dir.setdefault(os.path.dirname(d["path"]), []).append(d["path"])
+    for str_dir, v_paths in v_by_dir.items():
+        str_like = (str_dir + "/%") if str_dir else "%"
+        try:
+            v_files = [(r2[0], r2[1]) for r2 in cur.execute(
+                "SELECT id, file_path FROM nodes WHERE kind = 'file' AND file_path LIKE ? LIMIT 60",
+                (str_like,)).fetchall()]
+        except Exception:
+            v_files = []
+        v_files = [(fid, fp) for fid, fp in v_files if fid in loaded_node_ids]
+        for str_rel in v_paths:
+            str_did = f"doc:{proj_name}:{str_rel}"
+            if str_did in loaded_node_ids:
+                continue
+            nodes.append({
+                "id": str_did,
+                "name": os.path.basename(str_rel),
+                "kind": "doc",
+                "project": proj_name,
+                "project_path": repo_path,
+                "file_path": str_rel,
+                "start_line": 1,
+                "end_line": None,
+                "qualified_name": str_rel,
+                "signature": ""
+            })
+            loaded_node_ids.add(str_did)
+            if not v_files:
+                continue
+            str_stem = _FnDocStem(str_rel)
+            v_matched = [fid for fid, fp in v_files if _FnDocStem(fp) == str_stem]
+            if not v_matched:
+                try:
+                    with open(os.path.join(repo_path, str_rel), "r",
+                              encoding="utf-8", errors="replace") as f:
+                        str_body = f.read(60000).lower()
+                    v_matched = [fid for fid, fp in v_files
+                                 if len(_FnDocStem(fp)) > 2 and re.search(
+                                     r"(?<![a-z0-9_])" + re.escape(_FnDocStem(fp)) + r"(?![a-z0-9_])",
+                                     str_body)][:8]
+                except OSError:
+                    v_matched = []
+            for str_fid in v_matched[:8]:
+                links.append({
+                    "source": str_fid,
+                    "target": str_did,
+                    "kind": "doc",
+                    "cross_project": False
+                })
+    _FnLinkDocToDoc(proj_name, repo_path, nodes, links, loaded_node_ids)
+
+
+def _FnLinkDocToDoc(proj_name: str, repo_path: str,
+                    nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
+                    loaded_node_ids: set) -> None:
+    """Doc<->doc edges: a doc mentioning another doc's basename or relative
+    path earns a link. Same 60KB cap, 8 links per doc.
+    """
+    v_docs = [(n["id"], n["file_path"]) for n in nodes
+              if n.get("kind") == "doc" and n.get("project") == proj_name]
+    if len(v_docs) < 2:
+        return
+    v_bodies: Dict[str, str] = {}
+    for str_did, str_rel in v_docs:
+        try:
+            with open(os.path.join(repo_path, str_rel), "r",
+                      encoding="utf-8", errors="replace") as f:
+                v_bodies[str_did] = f.read(60000).lower()
+        except OSError:
+            continue
+    for str_did, str_rel in v_docs:
+        str_body = v_bodies.get(str_did, "")
+        if not str_body:
+            continue
+        n_links = 0
+        for str_oid, str_orel in v_docs:
+            if str_oid == str_did:
+                continue
+            str_base = os.path.basename(str_orel).lower()
+            if (str_base in str_body or str_orel.lower().replace("\\", "/") in str_body) \
+                    and str_oid in loaded_node_ids:
+                links.append({
+                    "source": str_did,
+                    "target": str_oid,
+                    "kind": "doc",
+                    "cross_project": False
+                })
+                n_links += 1
+                if n_links >= 8:
+                    break
 
 def extract_code_snippet(
     repo_path: str,

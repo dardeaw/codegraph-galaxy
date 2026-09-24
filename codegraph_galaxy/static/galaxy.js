@@ -135,6 +135,26 @@ function handleCodeReferenceClick(e) {
     if (typeof openDrawer === 'function') {
       openDrawer(targetNode);
     }
+  } else if (nodeId && typeof ensureChatNodeVisible === 'function') {
+    // Not in the current view (e.g. arch hides functions): walk up to the
+    // nearest revealed ancestor instead of dying silently.
+    ensureChatNodeVisible(nodeId, proj).then((n) => {
+      if (!n) {
+        showToast(t('chat_no_nodes'));
+        return;
+      }
+      if (typeof highlightScope === 'function') highlightScope('node', n);
+      if (typeof focusOnNode === 'function') focusOnNode(n);
+      if (typeof syncExplorerSelection === 'function') {
+        try { syncExplorerSelection(n); } catch (e) { /* ignore */ }
+      }
+      if (typeof openDrawer === 'function') openDrawer(n);
+      if (n._viaAncestor) {
+        showToast(t('chat_show_parent', { name: n.name || n.id, kind: n.kind || '' }));
+      }
+    }).catch(() => {
+      showToast(t('chat_no_nodes'));
+    });
   }
 }
 
@@ -310,6 +330,9 @@ const I18N = {
     trace_neighbors: 'Expand calls',
     trace_code: 'Read code',
     trace_blast: 'Impact',
+    trace_docs_search: 'Search docs',
+    trace_docs_read: 'Read doc',
+    trace_docs_related: 'Linked docs',
     help_title: 'How to use',
     help_mouse_t: '🖱 Mouse',
     help_mouse_rows: 'Drag: rotate the galaxy\nScroll: zoom in / out\nClick node: focus + inspector\nRight-click file/class: drill down\nDouble-click empty space: fit everything back',
@@ -361,12 +384,14 @@ const I18N = {
     kind_function: 'Function / Method',
     kind_import: 'Import',
     kind_variable: 'Variable / Constant',
+    kind_doc: 'Doc',
     edge_calls: 'Calls',
     edge_contains: 'Contains',
     edge_extends: 'Extends / Implements',
     edge_instantiates: 'Instantiates',
     edge_imports: 'Imports',
     edge_references: 'References',
+    edge_doc: 'Docs',
     drawer_panel_title: '🔍 Inspector',
     drawer_antigravity: 'Open in Antigravity',
     drawer_antigravity_tip: 'Open file directly in Antigravity IDE at target line',
@@ -474,6 +499,9 @@ const I18N = {
     trace_neighbors: '展開呼叫',
     trace_code: '讀取程式碼',
     trace_blast: '影響分析',
+    trace_docs_search: '搜尋文件',
+    trace_docs_read: '讀取文件',
+    trace_docs_related: '關聯文件',
     help_title: '使用說明',
     help_mouse_t: '🖱 滑鼠',
     help_mouse_rows: '拖曳：旋轉星系\n滾輪：放大 / 縮小\n點節點：聚焦＋開 Inspector\n右鍵點 file/class：往下鑽\n空地點兩下：全部收回置中',
@@ -525,12 +553,14 @@ const I18N = {
     kind_function: '函式/方法 (Function / Method)',
     kind_import: '引用 (Import)',
     kind_variable: '變數/常數 (Variable/Const)',
+    kind_doc: '文件 (Doc)',
     edge_calls: '函式呼叫 (Calls)',
     edge_contains: '包含層級 (Contains)',
     edge_extends: '繼承與實作 (Extends)',
     edge_instantiates: '實例化 (Instantiates)',
     edge_imports: '模組引用 (Imports)',
     edge_references: '符號參照 (References)',
+    edge_doc: '文件關聯 (Docs)',
     drawer_panel_title: '🔍 Inspector 檢查器',
     drawer_antigravity: '使用 Antigravity 開啟',
     drawer_antigravity_tip: '直接於 Antigravity IDE 中開啟該行程式碼',
@@ -713,7 +743,8 @@ const KIND_COLORS = {
   constant: '#d29922',
   property: '#a371f7',
   route: '#f778ba',
-  import: '#bc8cff'
+  import: '#bc8cff',
+  doc: '#e3b341'
 };
 
 const EDGE_COLORS = {
@@ -723,7 +754,8 @@ const EDGE_COLORS = {
   implements: '#f778ba',
   instantiates: '#d29922',
   imports: '#bc8cff',
-  references: '#3fb950'
+  references: '#3fb950',
+  doc: '#e3b341'
 };
 
 let Graph = null;
@@ -753,7 +785,15 @@ function init3DGraph() {
   Graph = ForceGraph3D()(elem)
     .backgroundColor('#090d13')
     .nodeId('id')
-    .nodeLabel(n => `${n.name} (${n.kind})\n${n.project} · ${n.file_path || ''}`)
+    .nodeLabel(n => {
+      const color = KIND_COLORS[n.kind] || '#58a6ff';
+      const name = escapeHtml(n.name || '');
+      const kind = escapeHtml(n.kind || '');
+      const proj = escapeHtml(n.project || '');
+      const fp = escapeHtml(n.file_path || '');
+      return `<div style="font-weight:700;color:${color};">${name} <span style="font-weight:400;opacity:0.85;">(${kind})</span></div>`
+        + `<div style="color:#8b949e;font-size:11px;">${proj}${fp ? ` · ${fp}` : ''}</div>`;
+    })
     .nodeColor(n => {
       if (highlightNodes.size > 0) {
         return highlightNodes.has(n.id) ? (KIND_COLORS[n.kind] || '#58a6ff') : '#1c212888';
@@ -765,6 +805,7 @@ function init3DGraph() {
       let base = 1.6;
       if (n.kind === 'file') base = 5.5;
       else if (n.kind === 'class') base = 4.2;
+      else if (n.kind === 'doc') base = 3.6;
       else if (n.kind === 'function' || n.kind === 'route') base = 2.8;
       else if (n.kind === 'method') base = 2.0;
 
@@ -1206,6 +1247,16 @@ function loadTreeData() {
     .catch(() => { /* keep last good tree */ });
 }
 
+// A markdown file on disk always has a doc twin (merged doc nodes cover all
+// on-disk .md); folder rows prefer the doc identity so clicks preview markdown.
+function treeDocForFile(projName, cleanFilePath) {
+  const list = (typeof treeData !== 'undefined' && treeData.nodes) || [];
+  for (const n of list) {
+    if (n && n.kind === 'doc' && n.project === projName && (n.file_path || '') === cleanFilePath) return n;
+  }
+  return null;
+}
+
 // Nest flat symbols under their parents via qualified_name
 // (StateMachine::__init__ under StateMachine); unknown parents stay top-level.
 function treeNestSymbols(symList) {
@@ -1425,6 +1476,56 @@ function buildProjectTree() {
     // Recursively render directory children preserving open states
     renderDirContents(projName, projData, projChildrenEl, openDirs, openFiles, selectedKey);
 
+    // Project docs folder (first-class doc nodes, independent of code LOD)
+    const docList = (treeData.nodes || []).filter(n => n && n.kind === 'doc' && n.project === projName);
+    if (docList.length) {
+      const docsKey = `${projName}:DOCS`;
+      const isDocsOpen = openDirs ? openDirs.has(docsKey) : false;
+      const docsNodeEl = document.createElement('div');
+      docsNodeEl.className = 'tree-node';
+      docsNodeEl.setAttribute('data-tree-dir', docsKey);
+      docsNodeEl.innerHTML = `
+        <span class="tree-arrow ${isDocsOpen ? 'open' : ''}">▸</span>
+        <span style="font-weight:500; color:#e6edf3;">📚 Docs</span>
+        <span class="node-kind-tag" style="color:#e3b341; border:1px solid #e3b34155; background:#e3b34114;">${docList.length}</span>
+      `;
+      const docsChildrenEl = document.createElement('div');
+      docsChildrenEl.className = `tree-children ${isDocsOpen ? 'open' : ''}`;
+      const docsArrow = docsNodeEl.querySelector('.tree-arrow');
+      if (docsArrow) {
+        docsArrow.onclick = (e) => {
+          e.stopPropagation();
+          docsChildrenEl.classList.toggle('open');
+          docsArrow.classList.toggle('open');
+        };
+      }
+      docList.sort((a, b) => (a.file_path || '').localeCompare(b.file_path || '')).forEach(d => {
+        const dEl = document.createElement('div');
+        dEl.className = 'tree-node';
+        dEl.setAttribute('data-tree-node-id', d.id);
+        dEl.innerHTML = `
+          <span class="tree-arrow" style="visibility:hidden;">▸</span>
+          <span style="color:#c9d1d9;">📄 ${d.name}</span>
+          <span class="node-kind-tag" style="color:#e3b341; border:1px solid #e3b34155; background:#e3b34114;">DOC</span>
+        `;
+        dEl.onclick = (e) => {
+          e.stopPropagation();
+          selectTreeNode(dEl);
+          openDrawer(d);
+          const g = (typeof findGraphNode === 'function') ? findGraphNode(d.id) : null;
+          const target = g || d;
+          highlightScope('node', target);
+          focusOnNode(target);
+        };
+        if (selectedKey === d.id) {
+          selectTreeNode(dEl);
+        }
+        docsChildrenEl.appendChild(dEl);
+      });
+      projChildrenEl.appendChild(docsNodeEl);
+      projChildrenEl.appendChild(docsChildrenEl);
+    }
+
     container.appendChild(projNodeEl);
     container.appendChild(projChildrenEl);
   });
@@ -1539,6 +1640,16 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
 
     const fileChildrenEl = document.createElement('div');
     fileChildrenEl.className = `tree-children ${isFileOpen ? 'open' : ''}`;
+    const docTwin = treeDocForFile(projName, cleanFilePath);
+    if (docTwin) {
+      const tag = fileNodeEl.querySelector('.node-kind-tag');
+      if (tag) {
+        tag.textContent = 'DOC';
+        tag.style.color = '#e3b341';
+        tag.style.border = '1px solid #e3b34155';
+        tag.style.background = '#e3b34114';
+      }
+    }
 
     const arrow = fileNodeEl.querySelector('.tree-arrow');
     if (arrow) {
@@ -1551,6 +1662,15 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
 
     fileNodeEl.onclick = () => {
       selectTreeNode(fileNodeEl);
+      const twin = treeDocForFile(projName, cleanFilePath);
+      if (twin) {
+        openDrawer(twin);
+        const g = (typeof findGraphNode === 'function') ? findGraphNode(twin.id) : null;
+        const target = g || twin;
+        highlightScope('node', target);
+        focusOnNode(target);
+        return;
+      }
       if (isUnindexed) {
         openUnindexedFileDrawer(fileNode);
       } else {
@@ -1864,7 +1984,8 @@ function buildLegends() {
     { kind: 'class', labelKey: 'kind_class' },
     { kind: 'function', labelKey: 'kind_function' },
     { kind: 'import', labelKey: 'kind_import' },
-    { kind: 'variable', labelKey: 'kind_variable' }
+    { kind: 'variable', labelKey: 'kind_variable' },
+    { kind: 'doc', labelKey: 'kind_doc' }
   ];
 
   nodeKinds.forEach(item => {
@@ -1916,7 +2037,8 @@ function buildLegends() {
     { kind: 'extends', labelKey: 'edge_extends' },
     { kind: 'instantiates', labelKey: 'edge_instantiates' },
     { kind: 'imports', labelKey: 'edge_imports' },
-    { kind: 'references', labelKey: 'edge_references' }
+    { kind: 'references', labelKey: 'edge_references' },
+    { kind: 'doc', labelKey: 'edge_doc' }
   ];
 
   edgeKinds.forEach(item => {
@@ -2161,7 +2283,25 @@ function openDrawer(node) {
   document.getElementById('d-code').innerText = t('drawer_loading_code');
 
   const codeContainer = document.getElementById('d-code');
-  if (node.file_path && node.project) {
+  if (node.kind === 'doc' && node.file_path && node.project) {
+    fetch(`/api/docs/section?project=${encodeURIComponent(node.project)}&path=${encodeURIComponent(node.file_path)}&start_line=1&end_line=200`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.text) {
+          codeContainer.innerHTML = (typeof renderDocMarkdown === 'function')
+            ? renderDocMarkdown(data.text, node.project)
+            : ((typeof chatRenderMarkdown === 'function')
+              ? chatRenderMarkdown(data.text)
+              : escapeHtml(data.text));
+          document.getElementById('code-lines-badge').innerText = `Line ${data.start_line} - ${data.end_line}`;
+        } else {
+          codeContainer.innerHTML = '<span style="color:#6e7681;">// Doc unavailable</span>';
+        }
+      })
+      .catch((err) => {
+        codeContainer.innerHTML = `<span style="color:#f85149;">// Error reading doc: ${escapeHtml(err.message || '')}</span>`;
+      });
+  } else if (node.file_path && node.project) {
     fetch(`/api/code?project=${encodeURIComponent(node.project)}&file_path=${encodeURIComponent(node.file_path)}&start_line=${startLine}&end_line=${endLine}`)
       .then(res => res.json())
       .then(data => {
@@ -3614,6 +3754,9 @@ function traceToolLabel(tool) {
     galaxy_get_neighbors: '🕸 ' + t('trace_neighbors'),
     galaxy_get_code: '📄 ' + t('trace_code'),
     galaxy_blast_radius: '💥 ' + t('trace_blast'),
+    galaxy_search_docs: '📚 ' + t('trace_docs_search'),
+    galaxy_read_doc: '📖 ' + t('trace_docs_read'),
+    galaxy_related_docs: '🔗 ' + t('trace_docs_related'),
   };
   return map[tool] || `🔍 ${tool}`;
 }
@@ -3849,9 +3992,88 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
   }));
 }
 
+// Doc symbol超連結: raw md → placeholder → markdown → code-ref-token.
+// Placeholder 穿過轉義與排版, 還原時跳過 HTML 標籤區, 沿用全域 click 跳轉。
+function docSymbolEntries(project) {
+  const list = [];
+  try {
+    if (typeof treeData !== 'undefined' && treeData.nodes) {
+      for (const n of treeData.nodes) list.push(n);
+    }
+    if (typeof rawData !== 'undefined' && rawData.nodes) {
+      for (const n of rawData.nodes) list.push(n);
+    }
+  } catch (e) { /* ignore */ }
+  const byName = new Map();
+  for (const n of list) {
+    if (!n || !n.name || typeof n.name !== 'string') continue;
+    const key = n.name.trim();
+    if (!key || key.length < 3) continue;
+    const dotted = key.includes('.');
+    if (!dotted && !/^[A-Za-z_$][\w$]*$/.test(key)) continue;
+    if (dotted && (/\s/.test(key) || key.length < 5)) continue;
+    if (!byName.has(key)) byName.set(key, []);
+    const arr = byName.get(key);
+    if (!arr.some((x) => x.id === n.id)) arr.push(n);
+  }
+  // Filenames always survive (few, high click value); identifiers fill the rest.
+  const files = [], idents = [];
+  for (const [name, arr] of byName) {
+    (name.includes('.') ? files : idents).push([name, arr]);
+  }
+  files.sort((a, b) => b[0].length - a[0].length);
+  idents.sort((a, b) => b[0].length - a[0].length);
+  return files.concat(idents).slice(0, 1000);
+}
+
+function escapeRegex(s) {
+  return String(s).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function renderDocMarkdown(rawText, project) {
+  const entries = docSymbolEntries(project);
+  const table = [];
+  let text = String(rawText || '');
+  if (entries.length) {
+    const parts = entries.map(([name]) => {
+      if (name.includes('.')) return `(?<![\\w$.])${escapeRegex(name)}\\b`;
+      return `\\b${escapeRegex(name)}\\b`;
+    });
+    let rx = null;
+    try {
+      rx = new RegExp(`(${parts.join('|')})`, 'g');
+    } catch (e) { rx = null; }
+    if (rx) {
+      const byName = new Map(entries);
+      text = text.replace(rx, (matched) => {
+        const cands = byName.get(matched) || [];
+        const node = (project && cands.find((n) => n.project === project)) || cands[0];
+        if (!node) return matched;
+        table.push({ node, matched });
+        return `D${table.length - 1}`;
+      });
+    }
+  }
+  let html = chatRenderMarkdown(text);
+  html = html.split(/(<[^>]*>)/g).map((seg, idx) => {
+    if (idx % 2 === 1) return seg;
+    return seg.replace(/D(\d+)/g, (m, num) => {
+      const entry = table[parseInt(num, 10)];
+      if (!entry) return m;
+      const node = entry.node;
+      const color = KIND_COLORS[node.kind] || '#58a6ff';
+      const kindTag = (node.kind || 'symbol').toUpperCase();
+      const projTag = node.project || '';
+      return `<span class="code-ref-token" data-symbol-name="${escapeHtml(node.name)}" data-node-id="${escapeHtml(node.id || '')}" data-project="${escapeHtml(projTag)}" style="color:${color}; border-color:${color}88;" title="&#128279; [${kindTag}] ${escapeHtml(node.name)} (${escapeHtml(projTag)})&#10;&#128073; Click to jump in 3D Galaxy & Explorer">${escapeHtml(entry.matched)}</span>`;
+    });
+  }).join('');
+  return html;
+}
+
 function traceNodeColor(kind) {
   const k = String(kind || '').toLowerCase();
   if (k.includes('file')) return '#f0883e';
+  if (k === 'doc') return '#e3b341';
   if (k.includes('class') || k.includes('interface') || k.includes('namespace') || k.includes('struct')) return '#3fb950';
   return '#58a6ff';
 }

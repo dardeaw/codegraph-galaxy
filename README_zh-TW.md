@@ -88,9 +88,9 @@ Code Graph Galaxy 提供原生跨平台桌面應用與命令列運行方案：
 
 ### 方式一：下載預編譯桌面程式（推薦）
 請前往 [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases) 下載對應作業系統之安裝檔：
-1. **Windows**：執行 `Code-Graph-Galaxy-Setup-2.0.0.exe` 安裝，或直接雙擊執行 `Code-Graph-Galaxy-2.0.0.exe`（便攜版）。
-2. **macOS**：打開 `Code-Graph-Galaxy-2.0.0.dmg`（Apple Silicon 請用 `-arm64.dmg`）並拖曳至應用程式目錄。
-3. **Linux**：賦予權限後直接執行：`chmod +x Code-Graph-Galaxy-2.0.0.AppImage && ./Code-Graph-Galaxy-2.0.0.AppImage`。
+1. **Windows**：執行 `Code-Graph-Galaxy-Setup-2.1.0.exe` 安裝，或直接雙擊執行 `Code-Graph-Galaxy-2.1.0.exe`（便攜版）。
+2. **macOS**：打開 `Code-Graph-Galaxy-2.1.0.dmg`（Apple Silicon 請用 `-arm64.dmg`）並拖曳至應用程式目錄。
+3. **Linux**：賦予權限後直接執行：`chmod +x Code-Graph-Galaxy-2.1.0.AppImage && ./Code-Graph-Galaxy-2.1.0.AppImage`。
 
 ---
 

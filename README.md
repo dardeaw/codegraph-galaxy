@@ -90,9 +90,9 @@ Code Graph Galaxy is available as a native desktop application and a portable CL
 
 ### Option A: Pre-built Desktop App (Recommended)
 Download the latest version for your OS from [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases):
-1. **Windows**: Run `Code-Graph-Galaxy-Setup-2.0.0.exe` or download the single-file `Code-Graph-Galaxy-2.0.0.exe` (Portable).
-2. **macOS**: Open `Code-Graph-Galaxy-2.0.0.dmg` (`-arm64.dmg` on Apple Silicon) and drag to Applications.
-3. **Linux**: Run `chmod +x Code-Graph-Galaxy-2.0.0.AppImage && ./Code-Graph-Galaxy-2.0.0.AppImage`.
+1. **Windows**: Run `Code-Graph-Galaxy-Setup-2.1.0.exe` or download the single-file `Code-Graph-Galaxy-2.1.0.exe` (Portable).
+2. **macOS**: Open `Code-Graph-Galaxy-2.1.0.dmg` (`-arm64.dmg` on Apple Silicon) and drag to Applications.
+3. **Linux**: Run `chmod +x Code-Graph-Galaxy-2.1.0.AppImage && ./Code-Graph-Galaxy-2.1.0.AppImage`.
 
 ---
 

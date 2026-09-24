@@ -18,7 +18,7 @@ Modern codebases grow rapidly. Understanding cross-project dependencies, module 
 
 **Code Graph Galaxy** bridges the gap between deep abstract code architecture and human spatial intuition. Powered by **Three.js WebGL** hardware acceleration and an embedded Python AST intelligence engine, it maps your repositories, classes, functions, files, and dependencies into an interactive 3D universe.
 
-Whether you are onboarding onto a massive project, conducting architecture refactoring, performing code reviews, or tracking delta changes, Code Graph Galaxy gives you an instant, holistic bird’s-eye perspective with surgical line-by-line inspection. Its built-in **AI Code Chat** goes one step further: ask about your codebase in plain language, watch the agent look up symbols, call chains, and source lines, then jump straight to the answer on the graph.
+Whether you are onboarding onto a massive project, conducting architecture refactoring, performing code reviews, or tracking delta changes, Code Graph Galaxy gives you an instant, holistic bird’s-eye perspective with surgical line-by-line inspection. Its built-in **AI Code Chat** goes one step further: ask about your codebase in plain language, watch the agent look up symbols, call chains, and source lines, then jump straight to the answer on the graph. Works with 30+ languages at full support — TypeScript/JavaScript, Python, Go, Rust, Java, C#, PHP, Ruby, C/C++, Swift, Kotlin, Dart, Vue, Svelte, and more.
 
 ---
 
@@ -68,6 +68,7 @@ Adapt visual density on the fly without overwhelming the screen:
 - **Chat Comfort**: Markdown answers with tables and code blocks, copy buttons, per-language system prompts (en-US / zh-TW), `Enter` to send / `Shift+Enter` for newline, draggable + resizable panel with memory.
 - **API**: `POST /api/chat`, `POST /api/chat/stream` (SSE), `GET /api/chat/node`, provider CRUD under `/api/chat/providers`. Backend env: `GALAXY_LLM_URL` / `GALAXY_LLM_MODEL`, or `GALAXY_LLM_BASE` / `GALAXY_LLM_KEY` / `GALAXY_LLM_CUSTOM_MODEL` for a remote endpoint.
 - **Docs-aware**: the agent also searches and reads repo markdown (TOC / sections) and links source files to their READMEs — code and docs answered together, file hits light up on the graph.
+- **Docs on the graph**: markdown files appear as first-class yellow doc nodes in every LOD (with earned same-stem/mention edges, never blanket links), a per-project Docs folder in the Explorer, legend/Node Types/Relationships entries, markdown-table previews in the Inspector, and clickable kind-colored symbol hyperlinks inside doc text.
 
 ### 8. MCP-Native: Any Agent Can Query Your Code
 - The bundled CodeGraph indexer (1.6.0) ships a built-in MCP server — no extra package, it arrives with `npm install`.

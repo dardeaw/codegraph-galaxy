@@ -16,7 +16,7 @@
 
 **Code Graph Galaxy** 結合了 **Three.js WebGL** 硬體加速渲染與輕量級 Python AST 分析引擎，將程式碼庫中的專案、模組、檔案、類別、函式與呼叫關係映射為三維立體星系。
 
-無論是用於**新人快速掌握龐大專案架構**、**架構重構與模組邊界評估**、**代碼審查 (Code Review)** 或是**追蹤即時異動差異**，Code Graph Galaxy 都能提供兼具宏觀全局視野與微觀行級代碼追蹤的最佳體驗。內建的 **AI 代碼對話**更進一步：直接用白話問 codebase，看著它查詢符號、追呼叫鏈、讀原始碼，再一鍵跳到圖上的答案。
+無論是用於**新人快速掌握龐大專案架構**、**架構重構與模組邊界評估**、**代碼審查 (Code Review)** 或是**追蹤即時異動差異**，Code Graph Galaxy 都能提供兼具宏觀全局視野與微觀行級代碼追蹤的最佳體驗。內建的 **AI 代碼對話**更進一步：直接用白話問 codebase，看著它查詢符號、追呼叫鏈、讀原始碼，再一鍵跳到圖上的答案。支援 30+ 種語言完整解析 —— TypeScript/JavaScript、Python、Go、Rust、Java、C#、PHP、Ruby、C/C++、Swift、Kotlin、Dart、Vue、Svelte 等，不挑語言。
 
 ---
 
@@ -66,6 +66,7 @@
 - **對話體驗**：Markdown 回答（含表格與代碼塊）、複製鍵、中英雙語提示詞、`Enter` 送出 / `Shift+Enter` 換行，可拖可縮、位置記憶。
 - **API**：`POST /api/chat`、`POST /api/chat/stream` (SSE)、`GET /api/chat/node`，provider 增刪改查在 `/api/chat/providers`。後端環境變數：`GALAXY_LLM_URL` / `GALAXY_LLM_MODEL`，或遠端端點用 `GALAXY_LLM_BASE` / `GALAXY_LLM_KEY` / `GALAXY_LLM_CUSTOM_MODEL`。
 - **懂文件**：agent 同時搜尋、讀取各庫 markdown（TOC / 段落），並把程式檔連到它的 README —— code 跟文件一起回答，文件命中照樣在圖上打光。
+- **文件直接上圖**：markdown 以黃色 doc 節點現身所有 LOD（邊只連同名/有提到的，不亂連），每專案一個 Docs 資料夾，圖例/Node Types/Relationships 同步多一列，Inspector 看得到 markdown 表格，文件裡的符號名是彩色可點的超連結。
 
 ### 8. MCP 原生：所有 Agent 都能查你的 code
 - 內建的 CodeGraph indexer（1.6.0）自帶 MCP server —— `npm install` 就有了，不用另裝。

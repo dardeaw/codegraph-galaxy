@@ -4,8 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Code Graph Galaxy</title>
+<!-- three.min.js + three-spritetext.min.js DISABLED 2026-09-29:
+     the UMD force-graph bundle prefers a global window.THREE when present
+     (var vf = window.THREE ? window.THREE : {...}), so a version-skewed
+     three hijacks its renderer and kills init. Sprite code auto-falls back
+     to the HTML overlay while disabled. Re-enable only with a matching build.
 <script src="/static/three.min.js?v=2.1.0"></script>
-<script src="/static/three-spritetext.min.js?v=2.1.0"></script>
+<script src="/static/three-spritetext.min.js?v=2.1.0"></script> -->
 <script src="/static/3d-force-graph.min.js"></script>
 <link rel="stylesheet" href="/static/galaxy.css?v=2.1.0">
 </head>

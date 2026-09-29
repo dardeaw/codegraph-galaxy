@@ -218,12 +218,14 @@ function renderHighlightedCode(codeText, currentProject, containerEl) {
   }
 
   const symbolMap = getFullSymbolMap();
+  // Only names actually present in this text compete (no length-starvation):
+  // short names like `typing` survive regardless of repo size.
   const dotted = [], plain = [];
   for (const name of symbolMap.keys()) {
     if (/^[A-Za-z_$][\w$]*$/.test(name)) {
-      if (!RESERVED_KEYWORDS.has(name)) plain.push(name);
+      if (!RESERVED_KEYWORDS.has(name) && codeText.includes(name)) plain.push(name);
     } else if (/^[\w$.()-]+\.[\w]+$/.test(name)) {
-      dotted.push(name);
+      if (codeText.includes(name)) dotted.push(name);
     }
   }
   dotted.sort((a, b) => b.length - a.length);
@@ -4120,7 +4122,7 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
 
 // Doc symbol超連結: raw md → placeholder → markdown → code-ref-token.
 // Placeholder 穿過轉義與排版, 還原時跳過 HTML 標籤區, 沿用全域 click 跳轉。
-function docSymbolEntries(project) {
+function docSymbolEntries(project, strText) {
   const list = [];
   try {
     if (typeof treeData !== 'undefined' && treeData.nodes) {
@@ -4138,6 +4140,7 @@ function docSymbolEntries(project) {
     const dotted = key.includes('.');
     if (!dotted && !/^[A-Za-z_$][\w$]*$/.test(key)) continue;
     if (dotted && (/\s/.test(key) || key.length < 5)) continue;
+    if (strText && !strText.includes(key)) continue;
     if (!byName.has(key)) byName.set(key, []);
     const arr = byName.get(key);
     if (!arr.some((x) => x.id === n.id)) arr.push(n);
@@ -4157,9 +4160,11 @@ function escapeRegex(s) {
 }
 
 function renderDocMarkdown(rawText, project) {
-  const entries = docSymbolEntries(project);
+  const text0 = String(rawText || '');
+  // Only names actually present in this doc compete (no length-starvation).
+  const entries = docSymbolEntries(project, text0);
   const table = [];
-  let text = String(rawText || '');
+  let text = text0;
   if (entries.length) {
     const parts = entries.map(([name]) => {
       if (name.includes('.')) return `(?<![\\w$.])${escapeRegex(name)}\\b`;

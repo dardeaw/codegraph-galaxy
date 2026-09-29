@@ -2310,7 +2310,11 @@ function changeLOD(mode) {
 const focusSettle = { timer: null };
 
 function flyToNode(node) {
-  const distance = 80;
+  let radius = 6;
+  try {
+    if (typeof spriteNodeRadius === 'function') radius = spriteNodeRadius(node);
+  } catch (e) { /* ignore */ }
+  const distance = Math.min(Math.max(80, radius * 4.5), 500);
   const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
   Graph.cameraPosition(
     { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
@@ -4169,6 +4173,9 @@ function locateChatNode(id) {
   const meta = (typeof chatNodeIndex !== 'undefined' && chatNodeIndex[id]) || {};
   ensureChatNodeVisible(id, meta.project || '').then((n) => {
     if (n) {
+      // Same treatment as a normal node click: highlight first, otherwise the
+      // target stays dimmed while its pill floats alone.
+      if (typeof highlightScope === 'function') highlightScope('node', n);
       focusOnNode(n);
       try { openDrawer(n); } catch (e) { /* drawer optional */ }
       try { syncExplorerSelection(n); } catch (e) { /* ignore */ }

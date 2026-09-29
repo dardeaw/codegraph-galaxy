@@ -27,6 +27,28 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+function getFullSymbolMap() {
+  // treeData (full index) + rawData (live view): clicks on hidden kinds
+  // walk up via the shared handler, so link everything known.
+  const map = new Map();
+  const feed = (nodes) => {
+    if (!nodes) return;
+    for (const node of nodes) {
+      if (!node || !node.name || typeof node.name !== 'string' || node.name.length < 2) continue;
+      const key = node.name.trim();
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      const arr = map.get(key);
+      if (!arr.some((x) => x.id === node.id)) arr.push(node);
+    }
+  };
+  try {
+    if (typeof treeData !== 'undefined' && treeData.nodes) feed(treeData.nodes);
+    if (typeof rawData !== 'undefined' && rawData.nodes) feed(rawData.nodes);
+  } catch (e) { /* ignore */ }
+  return map;
+}
+
 function renderHighlightedCode(codeText, currentProject, containerEl) {
   if (!containerEl) return;
   if (!codeText) {
@@ -34,10 +56,15 @@ function renderHighlightedCode(codeText, currentProject, containerEl) {
     return;
   }
 
-  const symbolMap = getSymbolMap();
-  const allSymbols = Array.from(symbolMap.keys())
-    .filter(name => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name))
-    .sort((a, b) => b.length - a.length);
+  const symbolMap = getFullSymbolMap();
+  const dotted = [], plain = [];
+  for (const name of symbolMap.keys()) {
+    if (/^[A-Za-z_$][\w$]*$/.test(name)) plain.push(name);
+    else if (/^[\w$.()-]+\.[\w]+$/.test(name)) dotted.push(name);
+  }
+  dotted.sort((a, b) => b.length - a.length);
+  plain.sort((a, b) => b.length - a.length);
+  const allSymbols = dotted.concat(plain).slice(0, 1000);
 
   // Split into lines for syntax and reference tokenization
   const rawLines = codeText.split(String.fromCharCode(10));
@@ -190,12 +217,20 @@ function renderHighlightedCode(codeText, currentProject, containerEl) {
     return;
   }
 
-  const symbolMap = getSymbolMap();
-  const allSymbols = Array.from(symbolMap.keys())
-    .filter(name => !RESERVED_KEYWORDS.has(name) && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name))
-    .sort((a, b) => b.length - a.length);
+  const symbolMap = getFullSymbolMap();
+  const dotted = [], plain = [];
+  for (const name of symbolMap.keys()) {
+    if (/^[A-Za-z_$][\w$]*$/.test(name)) {
+      if (!RESERVED_KEYWORDS.has(name)) plain.push(name);
+    } else if (/^[\w$.()-]+\.[\w]+$/.test(name)) {
+      dotted.push(name);
+    }
+  }
+  dotted.sort((a, b) => b.length - a.length);
+  plain.sort((a, b) => b.length - a.length);
+  const allSymbols = dotted.concat(plain).slice(0, 1000);
 
-  function escapeHtml(str) {
+function escapeHtml(str) {
     return str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')

@@ -268,7 +268,7 @@ function escapeHtml(str) {
 }
 
 // Global click handler for reference jump
-function handleCodeReferenceClick(e) {
+async function handleCodeReferenceClick(e) {
   const token = e.target.closest('.code-ref-token');
   if (!token) return;
 
@@ -287,50 +287,26 @@ function handleCodeReferenceClick(e) {
                  rawData.nodes.find(n => n.name === symName);
   }
 
-  if (targetNode) {
-    // 1. If target node's kind is hidden in current LOD, unhide it
-    if (hiddenKinds && hiddenKinds.has(targetNode.kind)) {
-      hiddenKinds.delete(targetNode.kind);
-      updateGraphData();
-    }
-
-    // 2. Highlight in 3D Graph & focus camera
-    if (typeof highlightScope === 'function') {
-      highlightScope('node', targetNode);
-    }
-    if (typeof focusOnNode === 'function') {
-      focusOnNode(targetNode);
-    }
-
-    // 3. Link with Explorer tree
-    if (typeof syncExplorerSelection === 'function') {
-      syncExplorerSelection(targetNode);
-    }
-
-    // 4. Update Inspector
-    if (typeof openDrawer === 'function') {
-      openDrawer(targetNode);
-    }
-  } else if (nodeId && typeof ensureChatNodeVisible === 'function') {
-    // Not in the current view (e.g. arch hides the kind): walk up to the
-    // nearest revealed ancestor instead of dying silently.
-    ensureChatNodeVisible(nodeId, proj).then((n) => {
-      if (!n) {
-        showToast(t('chat_no_nodes'));
-        return;
-      }
-      if (typeof highlightScope === 'function') highlightScope('node', n);
-      if (typeof focusOnNode === 'function') focusOnNode(n);
-      if (typeof syncExplorerSelection === 'function') {
-        try { syncExplorerSelection(n); } catch (e) { /* ignore */ }
-      }
-      if (typeof openDrawer === 'function') openDrawer(n);
-      if (n._viaAncestor) {
-        showToast(t('chat_show_parent', { name: n.name || n.id, kind: n.kind || '' }));
-      }
-    }).catch(() => {
-      showToast(t('chat_no_nodes'));
-    });
+  const key = (targetNode && targetNode.id) || nodeId;
+  const hintProj = (targetNode && targetNode.project) || proj;
+  if (!key) return;
+  const live = await revealChainForSelect(key, hintProj);
+  const focusTarget = live || targetNode;
+  if (!focusTarget) {
+    showToast(t('chat_no_nodes'));
+    return;
+  }
+  if (typeof highlightScope === 'function') {
+    highlightScope('node', focusTarget);
+  }
+  if (typeof focusOnNode === 'function') {
+    focusOnNode(focusTarget);
+  }
+  if (typeof syncExplorerSelection === 'function') {
+    syncExplorerSelection(focusTarget);
+  }
+  if (typeof openDrawer === 'function') {
+    openDrawer(focusTarget);
   }
 }
 
@@ -834,6 +810,9 @@ let lastBgClickAt = 0;
 // Highlighting State
 let highlightNodes = new Set();
 let highlightLinks = new Set();
+// Temporarily revealed hidden nodes (single-select): rendered despite layer
+// filters, wiped on clear/switch. Never persisted anywhere.
+const tempRevealed = new Set();
 let selectedTreeNodeEl = null;
 
 function init3DGraph() {
@@ -2031,6 +2010,7 @@ function clearHighlight() {
   highlightLinks.clear();
   selectTreeNode(null);
   showFocusLabelNode(null);
+  clearTempReveal();
 
   if (Graph) {
     Graph.nodeColor(Graph.nodeColor())
@@ -2038,6 +2018,51 @@ function clearHighlight() {
       .linkWidth(Graph.linkWidth())
       .linkDirectionalParticles(Graph.linkDirectionalParticles());
   }
+}
+
+function clearTempReveal() {
+  let had = false;
+  try {
+    if (tempRevealed.size > 0) had = true;
+    tempRevealed.clear();
+    if (typeof setChainPills === 'function') setChainPills([]);
+  } catch (e) { /* ignore */ }
+  if (had) { try { applyFilter(); } catch (e) { /* ignore */ } }
+}
+
+async function revealChainForSelect(nodeId, projectHint) {
+  clearTempReveal();
+  let info = null;
+  try {
+    const res = await fetch(`/api/chat/node?id=${encodeURIComponent(nodeId)}&project=${encodeURIComponent(projectHint || '')}`);
+    info = await res.json();
+  } catch (e) { /* backend unreachable */ }
+  if (!info || !info.found) return null;
+  if (typeof selectedProjects !== 'undefined' && !selectedProjects.has(info.project)) {
+    selectedProjects.add(info.project);
+    try { loadRootGraph(); } catch (e) { /* ignore */ }
+  }
+  const chain = [info.id, ...((info.vAncestors) || []).map((a) => a.id)];
+  let added = false;
+  for (const cid of chain) {
+    if (!tempRevealed.has(cid)) { tempRevealed.add(cid); added = true; }
+  }
+  if (added) { try { applyFilter(); } catch (e) { /* ignore */ } }
+  for (let i = 0; i < 40; i++) {
+    const hit = (typeof findGraphNode === 'function') ? findGraphNode(nodeId) : null;
+    if (hit && hit.x !== undefined && isFinite(hit.x)) return hit;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  for (const cid of chain) {
+    const hit = (typeof findGraphNode === 'function') ? findGraphNode(cid) : null;
+    if (hit && hit.x !== undefined && isFinite(hit.x)) {
+      if (hit.id !== nodeId) {
+        hit._viaAncestor = { id: nodeId, name: info.name, kind: info.kind };
+      }
+      return hit;
+    }
+  }
+  return null;
 }
 
 function filterTree(query) {
@@ -2147,6 +2172,7 @@ function buildLegends() {
       } else {
         hiddenKinds.add(item.kind);
       }
+      clearTempReveal();
 
       // Switch to custom mode
       currentLOD = 'custom';
@@ -2248,7 +2274,7 @@ function applyFilter(isInitial = false) {
     getRelatedKinds(k).forEach(subk => activeHiddenKinds.add(subk));
   });
 
-  const filteredNodes = rawData.nodes.filter(n => !activeHiddenKinds.has(n.kind));
+  const filteredNodes = rawData.nodes.filter(n => !activeHiddenKinds.has(n.kind) || tempRevealed.has(n.id));
   const nodeIds = new Set(filteredNodes.map(n => n.id));
   
   // Stable Physics: Smoothly preserve existing 3D node coordinates with zero velocity impulse
@@ -2833,6 +2859,7 @@ function selectAllProjects(select) {
 }
 
 function loadRootGraph(isSilent = false) {
+  clearTempReveal();
   if (selectedProjects.size === 0) {
     rawData = { nodes: [], links: [], unindexed_by_project: {} };
     applyFilter(false);
@@ -4274,31 +4301,7 @@ async function ensureChatNodeVisible(id, projectHint) {
   let n = findGraphNode(id);
   if (n) return n;
   showToast(t('chat_locating'));
-  let info = null;
-  try {
-    const res = await fetch(`/api/chat/node?id=${encodeURIComponent(id)}&project=${encodeURIComponent(projectHint || '')}`);
-    info = await res.json();
-  } catch (e) { /* backend unreachable */ }
-  if (!info || !info.found) return null;
-  // Its project must be selected for anything (self or ancestors) to appear.
-  if (!selectedProjects.has(info.project)) {
-    selectedProjects.add(info.project);
-    loadRootGraph();
-  }
-  const cands = [{ id, kind: info.kind, name: info.name }, ...((info.vAncestors) || [])];
-  for (let i = 0; i < 40; i++) {
-    for (const c of cands) {
-      const hit = findGraphNode(c.id);
-      if (hit) {
-        if (hit.id !== id) {
-          hit._viaAncestor = { id, name: info.name, kind: info.kind };
-        }
-        return hit;
-      }
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return null;
+  return revealChainForSelect(id, projectHint);
 }
 
 function appendTraceNodeChips(box, nodes) {

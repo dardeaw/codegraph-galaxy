@@ -1160,6 +1160,20 @@ function lightFullChain(node, token) {
       for (const aid of chain) {
         if (!highlightNodes.has(aid)) { highlightNodes.add(aid); added = true; }
       }
+      // Chain links: lit pills without their edges look broken (斷鍊).
+      try {
+        const links = (Graph && Graph.graphData && Graph.graphData().links) || [];
+        const inChain = new Set(chain);
+        inChain.add(node.id);
+        for (const l of links) {
+          const s = (l.source && l.source.id) || l.source;
+          const t = (l.target && l.target.id) || l.target;
+          if (inChain.has(s) && inChain.has(t) && !highlightLinks.has(l)) {
+            highlightLinks.add(l);
+            added = true;
+          }
+        }
+      } catch (e) { /* ignore */ }
     }
     if (added && typeof Graph !== 'undefined' && Graph) {
       Graph.nodeColor(Graph.nodeColor())

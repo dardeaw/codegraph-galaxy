@@ -1020,7 +1020,13 @@ function ensureFileLabelLayer() {
   document.body.appendChild(fileLabelLayer);
   const tick = () => {
     try {
-      updateFileLabels();
+      // SpriteText layer (ported from docgraphical) when THREE is present,
+      // otherwise the zero-dependency HTML overlay fallback.
+      if (spritesAvailable()) {
+        updateSpriteLabels();
+      } else {
+        updateFileLabels();
+      }
       updateFocusLabel();
     } catch (e) { /* never break the render loop */ }
     requestAnimationFrame(tick);
@@ -1142,6 +1148,87 @@ function lightFullChain(node, token) {
 }
 
 const pillDivs = new Map(); // id -> pill div (focused + chain, one node one label)
+
+// ==========================================
+// File labels via SpriteText (ported from docgraphical).
+// Real 3D billboards: occluded by spheres in front (depthTest), scale with
+// zoom, no per-frame DOM churn. HTML overlay stays as automatic fallback.
+// ==========================================
+const spriteLabels = new Map(); // id -> sprite
+
+function spritesAvailable() {
+  try {
+    return typeof SpriteText !== 'undefined'
+      && typeof Graph !== 'undefined' && Graph
+      && typeof Graph.scene === 'function' && !!Graph.scene();
+  } catch (e) {
+    return false;
+  }
+}
+
+function spriteNodeRadius(n) {
+  try {
+    const g = n.__threeObj && n.__threeObj.geometry;
+    if (g && g.parameters && isFinite(g.parameters.radius)) return g.parameters.radius;
+  } catch (e) { /* ignore */ }
+  return 6;
+}
+
+function disposeSprite(sp) {
+  try {
+    if (sp.material) {
+      if (sp.material.map) sp.material.map.dispose();
+      sp.material.dispose();
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function updateSpriteLabels() {
+  const scene = Graph.scene();
+  const nodes = (Graph.graphData && Graph.graphData().nodes) || [];
+  const seen = new Set();
+  const hlActive = (typeof highlightNodes !== 'undefined' && highlightNodes.size > 0);
+  const fileColor = (typeof KIND_COLORS !== 'undefined' && KIND_COLORS.file) || '#f0883e';
+  for (const n of nodes) {
+    if (!n || n.kind !== 'file' || n.x === undefined) continue;
+    const base = fileLabelName(n);
+    if (!base || base === '__init__.py') continue;
+    seen.add(n.id);
+    let sp = spriteLabels.get(n.id);
+    if (!sp) {
+      try {
+        sp = new SpriteText(base);
+      } catch (e) {
+        continue;
+      }
+      sp.color = fileColor;
+      try { sp.backgroundColor = 'rgba(10, 14, 20, 0.85)'; } catch (e) { /* ignore */ }
+      try { sp.borderWidth = 0; } catch (e) { /* ignore */ }
+      if (sp.material) {
+        sp.material.depthWrite = false;
+        sp.material.transparent = true;
+      }
+      try { scene.add(sp); } catch (e) { /* ignore */ }
+      spriteLabels.set(n.id, sp);
+    } else if (sp.text !== base) {
+      try { sp.text = base; } catch (e) { /* ignore */ }
+    }
+    const r = spriteNodeRadius(n);
+    const th = Math.min(Math.max(r * 0.32, 2.5), 9);
+    try { if (sp.textHeight !== th) sp.textHeight = th; } catch (e) { /* ignore */ }
+    try { sp.position.set(n.x, n.y + r + th * 0.75, n.z); } catch (e) { /* ignore */ }
+    if (sp.material) {
+      sp.material.opacity = (hlActive && !highlightNodes.has(n.id)) ? 0.15 : 0.95;
+    }
+  }
+  for (const [id, sp] of spriteLabels) {
+    if (!seen.has(id)) {
+      try { scene.remove(sp); } catch (e) { /* ignore */ }
+      disposeSprite(sp);
+      spriteLabels.delete(id);
+    }
+  }
+}
 
 function updateFocusLabel() {
   if (!fileLabelLayer) return;

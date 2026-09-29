@@ -311,6 +311,26 @@ function handleCodeReferenceClick(e) {
     if (typeof openDrawer === 'function') {
       openDrawer(targetNode);
     }
+  } else if (nodeId && typeof ensureChatNodeVisible === 'function') {
+    // Not in the current view (e.g. arch hides the kind): walk up to the
+    // nearest revealed ancestor instead of dying silently.
+    ensureChatNodeVisible(nodeId, proj).then((n) => {
+      if (!n) {
+        showToast(t('chat_no_nodes'));
+        return;
+      }
+      if (typeof highlightScope === 'function') highlightScope('node', n);
+      if (typeof focusOnNode === 'function') focusOnNode(n);
+      if (typeof syncExplorerSelection === 'function') {
+        try { syncExplorerSelection(n); } catch (e) { /* ignore */ }
+      }
+      if (typeof openDrawer === 'function') openDrawer(n);
+      if (n._viaAncestor) {
+        showToast(t('chat_show_parent', { name: n.name || n.id, kind: n.kind || '' }));
+      }
+    }).catch(() => {
+      showToast(t('chat_no_nodes'));
+    });
   }
 }
 

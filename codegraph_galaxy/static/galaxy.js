@@ -27,6 +27,28 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+function getFullSymbolMap() {
+  // treeData (full index) + rawData (live view): clicks on hidden kinds
+  // walk up via the shared handler, so link everything known.
+  const map = new Map();
+  const feed = (nodes) => {
+    if (!nodes) return;
+    for (const node of nodes) {
+      if (!node || !node.name || typeof node.name !== 'string' || node.name.length < 2) continue;
+      const key = node.name.trim();
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      const arr = map.get(key);
+      if (!arr.some((x) => x.id === node.id)) arr.push(node);
+    }
+  };
+  try {
+    if (typeof treeData !== 'undefined' && treeData.nodes) feed(treeData.nodes);
+    if (typeof rawData !== 'undefined' && rawData.nodes) feed(rawData.nodes);
+  } catch (e) { /* ignore */ }
+  return map;
+}
+
 function renderHighlightedCode(codeText, currentProject, containerEl) {
   if (!containerEl) return;
   if (!codeText) {
@@ -34,10 +56,15 @@ function renderHighlightedCode(codeText, currentProject, containerEl) {
     return;
   }
 
-  const symbolMap = getSymbolMap();
-  const allSymbols = Array.from(symbolMap.keys())
-    .filter(name => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name))
-    .sort((a, b) => b.length - a.length);
+  const symbolMap = getFullSymbolMap();
+  const dotted = [], plain = [];
+  for (const name of symbolMap.keys()) {
+    if (/^[A-Za-z_$][\w$]*$/.test(name)) plain.push(name);
+    else if (/^[\w$.()-]+\.[\w]+$/.test(name)) dotted.push(name);
+  }
+  dotted.sort((a, b) => b.length - a.length);
+  plain.sort((a, b) => b.length - a.length);
+  const allSymbols = dotted.concat(plain).slice(0, 1000);
 
   // Split into lines for syntax and reference tokenization
   const rawLines = codeText.split(String.fromCharCode(10));
@@ -190,12 +217,22 @@ function renderHighlightedCode(codeText, currentProject, containerEl) {
     return;
   }
 
-  const symbolMap = getSymbolMap();
-  const allSymbols = Array.from(symbolMap.keys())
-    .filter(name => !RESERVED_KEYWORDS.has(name) && /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name))
-    .sort((a, b) => b.length - a.length);
+  const symbolMap = getFullSymbolMap();
+  // Only names actually present in this text compete (no length-starvation):
+  // short names like `typing` survive regardless of repo size.
+  const dotted = [], plain = [];
+  for (const name of symbolMap.keys()) {
+    if (/^[A-Za-z_$][\w$]*$/.test(name)) {
+      if (!RESERVED_KEYWORDS.has(name) && codeText.includes(name)) plain.push(name);
+    } else if (/^[\w$.()-]+\.[\w]+$/.test(name)) {
+      if (codeText.includes(name)) dotted.push(name);
+    }
+  }
+  dotted.sort((a, b) => b.length - a.length);
+  plain.sort((a, b) => b.length - a.length);
+  const allSymbols = dotted.concat(plain).slice(0, 1000);
 
-  function escapeHtml(str) {
+function escapeHtml(str) {
     return str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -231,7 +268,7 @@ function renderHighlightedCode(codeText, currentProject, containerEl) {
 }
 
 // Global click handler for reference jump
-function handleCodeReferenceClick(e) {
+async function handleCodeReferenceClick(e) {
   const token = e.target.closest('.code-ref-token');
   if (!token) return;
 
@@ -250,30 +287,26 @@ function handleCodeReferenceClick(e) {
                  rawData.nodes.find(n => n.name === symName);
   }
 
-  if (targetNode) {
-    // 1. If target node's kind is hidden in current LOD, unhide it
-    if (hiddenKinds && hiddenKinds.has(targetNode.kind)) {
-      hiddenKinds.delete(targetNode.kind);
-      updateGraphData();
-    }
-
-    // 2. Highlight in 3D Graph & focus camera
-    if (typeof highlightScope === 'function') {
-      highlightScope('node', targetNode);
-    }
-    if (typeof focusOnNode === 'function') {
-      focusOnNode(targetNode);
-    }
-
-    // 3. Link with Explorer tree
-    if (typeof syncExplorerSelection === 'function') {
-      syncExplorerSelection(targetNode);
-    }
-
-    // 4. Update Inspector
-    if (typeof openDrawer === 'function') {
-      openDrawer(targetNode);
-    }
+  const key = (targetNode && targetNode.id) || nodeId;
+  const hintProj = (targetNode && targetNode.project) || proj;
+  if (!key) return;
+  const live = await revealChainForSelect(key, hintProj);
+  const focusTarget = live || targetNode;
+  if (!focusTarget) {
+    showToast(t('chat_no_nodes'));
+    return;
+  }
+  if (typeof highlightScope === 'function') {
+    highlightScope('node', focusTarget);
+  }
+  if (typeof focusOnNode === 'function') {
+    focusOnNode(focusTarget);
+  }
+  if (typeof syncExplorerSelection === 'function') {
+    syncExplorerSelection(focusTarget);
+  }
+  if (typeof openDrawer === 'function') {
+    openDrawer(focusTarget);
   }
 }
 
@@ -777,6 +810,9 @@ let lastBgClickAt = 0;
 // Highlighting State
 let highlightNodes = new Set();
 let highlightLinks = new Set();
+// Temporarily revealed hidden nodes (single-select): rendered despite layer
+// filters, wiped on clear/switch. Never persisted anywhere.
+const tempRevealed = new Set();
 let selectedTreeNodeEl = null;
 
 function init3DGraph() {
@@ -1020,7 +1056,13 @@ function ensureFileLabelLayer() {
   document.body.appendChild(fileLabelLayer);
   const tick = () => {
     try {
-      updateFileLabels();
+      // SpriteText layer (ported from docgraphical) when THREE is present,
+      // otherwise the zero-dependency HTML overlay fallback.
+      if (spritesAvailable()) {
+        updateSpriteLabels();
+      } else {
+        updateFileLabels();
+      }
       updateFocusLabel();
     } catch (e) { /* never break the render loop */ }
     requestAnimationFrame(tick);
@@ -1118,6 +1160,20 @@ function lightFullChain(node, token) {
       for (const aid of chain) {
         if (!highlightNodes.has(aid)) { highlightNodes.add(aid); added = true; }
       }
+      // Chain links: lit pills without their edges look broken (斷鍊).
+      try {
+        const links = (Graph && Graph.graphData && Graph.graphData().links) || [];
+        const inChain = new Set(chain);
+        inChain.add(node.id);
+        for (const l of links) {
+          const s = (l.source && l.source.id) || l.source;
+          const t = (l.target && l.target.id) || l.target;
+          if (inChain.has(s) && inChain.has(t) && !highlightLinks.has(l)) {
+            highlightLinks.add(l);
+            added = true;
+          }
+        }
+      } catch (e) { /* ignore */ }
     }
     if (added && typeof Graph !== 'undefined' && Graph) {
       Graph.nodeColor(Graph.nodeColor())
@@ -1142,6 +1198,87 @@ function lightFullChain(node, token) {
 }
 
 const pillDivs = new Map(); // id -> pill div (focused + chain, one node one label)
+
+// ==========================================
+// File labels via SpriteText (ported from docgraphical).
+// Real 3D billboards: occluded by spheres in front (depthTest), scale with
+// zoom, no per-frame DOM churn. HTML overlay stays as automatic fallback.
+// ==========================================
+const spriteLabels = new Map(); // id -> sprite
+
+function spritesAvailable() {
+  try {
+    return typeof SpriteText !== 'undefined'
+      && typeof Graph !== 'undefined' && Graph
+      && typeof Graph.scene === 'function' && !!Graph.scene();
+  } catch (e) {
+    return false;
+  }
+}
+
+function spriteNodeRadius(n) {
+  try {
+    const g = n.__threeObj && n.__threeObj.geometry;
+    if (g && g.parameters && isFinite(g.parameters.radius)) return g.parameters.radius;
+  } catch (e) { /* ignore */ }
+  return 6;
+}
+
+function disposeSprite(sp) {
+  try {
+    if (sp.material) {
+      if (sp.material.map) sp.material.map.dispose();
+      sp.material.dispose();
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function updateSpriteLabels() {
+  const scene = Graph.scene();
+  const nodes = (Graph.graphData && Graph.graphData().nodes) || [];
+  const seen = new Set();
+  const hlActive = (typeof highlightNodes !== 'undefined' && highlightNodes.size > 0);
+  const fileColor = (typeof KIND_COLORS !== 'undefined' && KIND_COLORS.file) || '#f0883e';
+  for (const n of nodes) {
+    if (!n || n.kind !== 'file' || n.x === undefined) continue;
+    const base = fileLabelName(n);
+    if (!base || base === '__init__.py') continue;
+    seen.add(n.id);
+    let sp = spriteLabels.get(n.id);
+    if (!sp) {
+      try {
+        sp = new SpriteText(base);
+      } catch (e) {
+        continue;
+      }
+      sp.color = fileColor;
+      try { sp.backgroundColor = 'rgba(10, 14, 20, 0.85)'; } catch (e) { /* ignore */ }
+      try { sp.borderWidth = 0; } catch (e) { /* ignore */ }
+      if (sp.material) {
+        sp.material.depthWrite = false;
+        sp.material.transparent = true;
+      }
+      try { scene.add(sp); } catch (e) { /* ignore */ }
+      spriteLabels.set(n.id, sp);
+    } else if (sp.text !== base) {
+      try { sp.text = base; } catch (e) { /* ignore */ }
+    }
+    const r = spriteNodeRadius(n);
+    const th = Math.min(Math.max(r * 0.32, 2.5), 9);
+    try { if (sp.textHeight !== th) sp.textHeight = th; } catch (e) { /* ignore */ }
+    try { sp.position.set(n.x, n.y + r + th * 0.75, n.z); } catch (e) { /* ignore */ }
+    if (sp.material) {
+      sp.material.opacity = (hlActive && !highlightNodes.has(n.id)) ? 0.15 : 0.95;
+    }
+  }
+  for (const [id, sp] of spriteLabels) {
+    if (!seen.has(id)) {
+      try { scene.remove(sp); } catch (e) { /* ignore */ }
+      disposeSprite(sp);
+      spriteLabels.delete(id);
+    }
+  }
+}
 
 function updateFocusLabel() {
   if (!fileLabelLayer) return;
@@ -1887,6 +2024,7 @@ function clearHighlight() {
   highlightLinks.clear();
   selectTreeNode(null);
   showFocusLabelNode(null);
+  clearTempReveal();
 
   if (Graph) {
     Graph.nodeColor(Graph.nodeColor())
@@ -1894,6 +2032,51 @@ function clearHighlight() {
       .linkWidth(Graph.linkWidth())
       .linkDirectionalParticles(Graph.linkDirectionalParticles());
   }
+}
+
+function clearTempReveal() {
+  let had = false;
+  try {
+    if (tempRevealed.size > 0) had = true;
+    tempRevealed.clear();
+    if (typeof setChainPills === 'function') setChainPills([]);
+  } catch (e) { /* ignore */ }
+  if (had) { try { applyFilter(); } catch (e) { /* ignore */ } }
+}
+
+async function revealChainForSelect(nodeId, projectHint) {
+  clearTempReveal();
+  let info = null;
+  try {
+    const res = await fetch(`/api/chat/node?id=${encodeURIComponent(nodeId)}&project=${encodeURIComponent(projectHint || '')}`);
+    info = await res.json();
+  } catch (e) { /* backend unreachable */ }
+  if (!info || !info.found) return null;
+  if (typeof selectedProjects !== 'undefined' && !selectedProjects.has(info.project)) {
+    selectedProjects.add(info.project);
+    try { loadRootGraph(); } catch (e) { /* ignore */ }
+  }
+  const chain = [info.id, ...((info.vAncestors) || []).map((a) => a.id)];
+  let added = false;
+  for (const cid of chain) {
+    if (!tempRevealed.has(cid)) { tempRevealed.add(cid); added = true; }
+  }
+  if (added) { try { applyFilter(); } catch (e) { /* ignore */ } }
+  for (let i = 0; i < 40; i++) {
+    const hit = (typeof findGraphNode === 'function') ? findGraphNode(nodeId) : null;
+    if (hit && hit.x !== undefined && isFinite(hit.x)) return hit;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  for (const cid of chain) {
+    const hit = (typeof findGraphNode === 'function') ? findGraphNode(cid) : null;
+    if (hit && hit.x !== undefined && isFinite(hit.x)) {
+      if (hit.id !== nodeId) {
+        hit._viaAncestor = { id: nodeId, name: info.name, kind: info.kind };
+      }
+      return hit;
+    }
+  }
+  return null;
 }
 
 function filterTree(query) {
@@ -2003,6 +2186,7 @@ function buildLegends() {
       } else {
         hiddenKinds.add(item.kind);
       }
+      clearTempReveal();
 
       // Switch to custom mode
       currentLOD = 'custom';
@@ -2104,7 +2288,7 @@ function applyFilter(isInitial = false) {
     getRelatedKinds(k).forEach(subk => activeHiddenKinds.add(subk));
   });
 
-  const filteredNodes = rawData.nodes.filter(n => !activeHiddenKinds.has(n.kind));
+  const filteredNodes = rawData.nodes.filter(n => !activeHiddenKinds.has(n.kind) || tempRevealed.has(n.id));
   const nodeIds = new Set(filteredNodes.map(n => n.id));
   
   // Stable Physics: Smoothly preserve existing 3D node coordinates with zero velocity impulse
@@ -2223,7 +2407,11 @@ function changeLOD(mode) {
 const focusSettle = { timer: null };
 
 function flyToNode(node) {
-  const distance = 80;
+  let radius = 6;
+  try {
+    if (typeof spriteNodeRadius === 'function') radius = spriteNodeRadius(node);
+  } catch (e) { /* ignore */ }
+  const distance = Math.min(Math.max(80, radius * 4.5), 500);
   const distRatio = 1 + distance / Math.hypot(node.x || 1, node.y || 1, node.z || 1);
   Graph.cameraPosition(
     { x: (node.x || 0) * distRatio, y: (node.y || 0) * distRatio, z: (node.z || 0) * distRatio },
@@ -2685,6 +2873,7 @@ function selectAllProjects(select) {
 }
 
 function loadRootGraph(isSilent = false) {
+  clearTempReveal();
   if (selectedProjects.size === 0) {
     rawData = { nodes: [], links: [], unindexed_by_project: {} };
     applyFilter(false);
@@ -3994,7 +4183,7 @@ function finishChatAnswer(done, steps, streamed, aiDiv, traceRows, userText) {
 
 // Doc symbol超連結: raw md → placeholder → markdown → code-ref-token.
 // Placeholder 穿過轉義與排版, 還原時跳過 HTML 標籤區, 沿用全域 click 跳轉。
-function docSymbolEntries(project) {
+function docSymbolEntries(project, strText) {
   const list = [];
   try {
     if (typeof treeData !== 'undefined' && treeData.nodes) {
@@ -4012,6 +4201,7 @@ function docSymbolEntries(project) {
     const dotted = key.includes('.');
     if (!dotted && !/^[A-Za-z_$][\w$]*$/.test(key)) continue;
     if (dotted && (/\s/.test(key) || key.length < 5)) continue;
+    if (strText && !strText.includes(key)) continue;
     if (!byName.has(key)) byName.set(key, []);
     const arr = byName.get(key);
     if (!arr.some((x) => x.id === n.id)) arr.push(n);
@@ -4031,9 +4221,11 @@ function escapeRegex(s) {
 }
 
 function renderDocMarkdown(rawText, project) {
-  const entries = docSymbolEntries(project);
+  const text0 = String(rawText || '');
+  // Only names actually present in this doc compete (no length-starvation).
+  const entries = docSymbolEntries(project, text0);
   const table = [];
-  let text = String(rawText || '');
+  let text = text0;
   if (entries.length) {
     const parts = entries.map(([name]) => {
       if (name.includes('.')) return `(?<![\\w$.])${escapeRegex(name)}\\b`;
@@ -4082,6 +4274,9 @@ function locateChatNode(id) {
   const meta = (typeof chatNodeIndex !== 'undefined' && chatNodeIndex[id]) || {};
   ensureChatNodeVisible(id, meta.project || '').then((n) => {
     if (n) {
+      // Same treatment as a normal node click: highlight first, otherwise the
+      // target stays dimmed while its pill floats alone.
+      if (typeof highlightScope === 'function') highlightScope('node', n);
       focusOnNode(n);
       try { openDrawer(n); } catch (e) { /* drawer optional */ }
       try { syncExplorerSelection(n); } catch (e) { /* ignore */ }
@@ -4120,31 +4315,7 @@ async function ensureChatNodeVisible(id, projectHint) {
   let n = findGraphNode(id);
   if (n) return n;
   showToast(t('chat_locating'));
-  let info = null;
-  try {
-    const res = await fetch(`/api/chat/node?id=${encodeURIComponent(id)}&project=${encodeURIComponent(projectHint || '')}`);
-    info = await res.json();
-  } catch (e) { /* backend unreachable */ }
-  if (!info || !info.found) return null;
-  // Its project must be selected for anything (self or ancestors) to appear.
-  if (!selectedProjects.has(info.project)) {
-    selectedProjects.add(info.project);
-    loadRootGraph();
-  }
-  const cands = [{ id, kind: info.kind, name: info.name }, ...((info.vAncestors) || [])];
-  for (let i = 0; i < 40; i++) {
-    for (const c of cands) {
-      const hit = findGraphNode(c.id);
-      if (hit) {
-        if (hit.id !== id) {
-          hit._viaAncestor = { id, name: info.name, kind: info.kind };
-        }
-        return hit;
-      }
-    }
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return null;
+  return revealChainForSelect(id, projectHint);
 }
 
 function appendTraceNodeChips(box, nodes) {

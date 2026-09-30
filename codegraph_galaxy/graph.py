@@ -220,6 +220,56 @@ def FnPruneExcludedFiles(db_path: str, repo_path: str,
     return {"files": n_files, "nodes": n_nodes, "edges": n_edges}
 
 
+def FnRemoveIndexedFile(db_path: str, repo_path: str,
+                        rel_path: str) -> Dict[str, Any]:
+    """Direct physical management: delete one indexed file's rows.
+
+    Removes the file's nodes (FTS follows via nodes_ad trigger), attached
+    edges, its files-table record, its unresolved_refs, and orphaned
+    name_segment_vocab entries — all in one transaction. The file stays
+    on disk, so it reappears as unindexed (pending) until the next sync.
+    """
+    norm_rel = (rel_path or "").replace("\\", "/").strip("/")
+    if not norm_rel or norm_rel == ".." or norm_rel.startswith("../"):
+        return {"files": 0, "nodes": 0, "edges": 0, "refs": 0}
+    n_files = n_nodes = n_edges = n_refs = 0
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            cur = conn.cursor()
+            rows = cur.execute(
+                "SELECT id FROM nodes WHERE file_path = ?",
+                (norm_rel,)).fetchall()
+            v_ids = [r[0] for r in rows]
+            if v_ids:
+                ph = ",".join("?" * len(v_ids))
+                n_edges += cur.execute(
+                    f"DELETE FROM edges WHERE source IN ({ph}) OR target IN ({ph})",
+                    (*v_ids, *v_ids)).rowcount or 0
+                n_nodes += cur.execute(
+                    f"DELETE FROM nodes WHERE id IN ({ph})",
+                    (*v_ids,)).rowcount or 0
+            n_files += cur.execute(
+                "DELETE FROM files WHERE path = ?",
+                (norm_rel,)).rowcount or 0
+            n_refs += cur.execute(
+                "DELETE FROM unresolved_refs WHERE file_path = ?",
+                (norm_rel,)).rowcount or 0
+            try:
+                cur.execute(
+                    "DELETE FROM name_segment_vocab WHERE name NOT IN "
+                    "(SELECT DISTINCT name FROM nodes)")
+            except Exception:
+                pass  # older schema without vocab table
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        return {"files": 0, "nodes": 0, "edges": 0, "refs": 0}
+    return {"files": n_files, "nodes": n_nodes, "edges": n_edges,
+            "refs": n_refs}
+
+
 def _FnLinkDocToDoc(proj_name: str, repo_path: str,
                     nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
                     loaded_node_ids: set) -> None:

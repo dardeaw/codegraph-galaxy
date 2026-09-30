@@ -1,11 +1,12 @@
 """Flask web server application factory and API routing."""
 import json
 import os
+import threading
 from typing import Optional, List
 from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
-from .graph import fetch_project_graph, extract_code_snippet, FnPruneExcludedFiles
+from .graph import fetch_project_graph, extract_code_snippet, FnPruneExcludedFiles, FnRemoveIndexedFile
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -27,6 +28,10 @@ def resolve_template_path(pkg_dir: str) -> Optional[str]:
 def _known_repo_paths(repos: dict) -> set:
     """Absolute paths of discovered repositories (allowlist for CLI actions)."""
     return {os.path.abspath(p) for p in repos.values()}
+
+# Serializes direct-DB writes against each other (remove vs remove).
+# CLI sync runs in its own process with its own lock file.
+_DB_WRITE_LOCK = threading.Lock()
 
 def _sse_frame(str_event: str, o_data) -> str:
     """Minimal SSE frame (same contract as RDLib ChatDialogController)."""
@@ -484,6 +489,37 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             return jsonify({"success": True, "output": out,
                             "pruned": _FnPruneRepo(os.path.abspath(target_path))})
         return jsonify({"success": False, "error": out}), 500
+
+    @app.route("/api/file/remove", methods=["POST"])
+    def remove_indexed_file():
+        """File-manager kick-out: delete one file's rows from the DB.
+
+        The file stays on disk, so it reappears as unindexed (pending)
+        until the next sync. Direct physical management, no side lists.
+        """
+        data = request.get_json(silent=True) or {}
+        project = (data.get("project") or "").strip()
+        rel_path = (data.get("file_path") or data.get("path") or "").strip()
+        if not project or not rel_path:
+            return jsonify({"success": False,
+                            "error": "project and file_path required"}), 400
+        if ".." in rel_path.replace("\\", "/").split("/"):
+            return jsonify({"success": False,
+                            "error": "Invalid file_path"}), 400
+
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        repo_path = repos.get(project)
+        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False,
+                            "error": "Unknown project"}), 400
+        db = get_db_path(repo_path)
+        if not db:
+            return jsonify({"success": False,
+                            "error": "Project not indexed"}), 400
+        with _DB_WRITE_LOCK:
+            removed = FnRemoveIndexedFile(db, repo_path, rel_path)
+        return jsonify({"success": True, "removed": removed})
 
     @app.route("/api/paths/add", methods=["POST"])
     def add_custom_path():

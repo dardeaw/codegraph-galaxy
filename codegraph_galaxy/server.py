@@ -379,27 +379,62 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     def sync_all():
         data = request.get_json(silent=True) or {}
         target_path = data.get("path")
+        # File-manager scoping: also accept project name(s). The sync modal
+        # sends {projects: [name]} — honor it instead of syncing everything.
+        want = []
+        if data.get("project"):
+            want.append(data.get("project"))
+        want.extend(data.get("projects") or [])
         roots = get_search_roots(search_roots)
         repos = scan_repositories(roots)
 
-        target_repos: list = []
-        if target_path:
+        def _metrics(repo):
+            if not get_db_path(repo):
+                return {"nodes": 0, "edges": 0, "pending": 0}
+            n, e, u = get_repo_metrics_and_delta(repo)
+            return {"nodes": n, "edges": e, "pending": len(u)}
+
+        if want:
+            unknown = [w for w in want if w not in repos]
+            if unknown:
+                return jsonify({"success": False, "error": "Unknown project(s): " + ", ".join(unknown)}), 400
+            target_repos = [repos[w] for w in want]
+        elif target_path:
             abs_target = os.path.abspath(target_path)
             if abs_target not in _known_repo_paths(repos):
                 return jsonify({"success": False, "error": "Unknown repository path"}), 400
-            per = execute_sync([abs_target]).get(os.path.basename(abs_target)) or {}
-            if per.get("success"):
-                per["pruned"] = _FnPruneRepo(abs_target)
-                return jsonify({"success": True, "output": per.get("output", ""),
-                                "pruned": per["pruned"]})
-            return jsonify({"success": False, "error": per.get("error", "sync failed")}), 500
-        target_repos = [p for p in repos.values() if get_db_path(p)]
+            target_repos = [abs_target]
+        else:
+            target_repos = [p for p in repos.values() if get_db_path(p)]
+
+        before = {r: _metrics(r) for r in target_repos}
         outputs = execute_sync(target_repos)
+        out = {}
         for r in target_repos:
             name = os.path.basename(r)
-            if isinstance(outputs.get(name), dict) and outputs[name].get("success"):
-                outputs[name]["pruned"] = _FnPruneRepo(r)
-        return jsonify(outputs)
+            per = outputs.get(name) or {}
+            entry = {"success": bool(per.get("success")),
+                     "output": per.get("output", ""),
+                     "error": per.get("error", "")}
+            if entry["success"]:
+                entry["pruned"] = _FnPruneRepo(r)
+                aft = _metrics(r)
+                entry["metrics"] = {
+                    "before": before[r], "after": aft,
+                    "nodes_added": aft["nodes"] - before[r]["nodes"],
+                    "pending_resolved": before[r]["pending"] - aft["pending"],
+                }
+            out[name] = entry
+        if target_path and len(target_repos) == 1:
+            # Legacy single-target shape; project(s) callers always get
+            # the keyed shape (the sync modal reads data[projectName]).
+            single = out[os.path.basename(target_repos[0])]
+            if single["success"]:
+                return jsonify({"success": True, "output": single["output"],
+                                "pruned": single.get("pruned"),
+                                "metrics": single.get("metrics")})
+            return jsonify({"success": False, "error": single.get("error", "sync failed")}), 500
+        return jsonify(out)
 
     @app.route("/api/project/exclude", methods=["POST"])
     def exclude_project():

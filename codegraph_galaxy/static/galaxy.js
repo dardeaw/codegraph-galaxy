@@ -2835,13 +2835,24 @@ function loadProjects(isSilent = false) {
       const readyProjects = projects.filter(p => p.status === 'ready');
       
       if (selectedProjects.size === 0 && readyProjects.length > 0) {
-        if (readyProjects.length <= 3) {
-          readyProjects.forEach(p => selectedProjects.add(p.name));
-        } else {
-          const pref = readyProjects.find(p => p.name === 'RDLib') || readyProjects[0];
-          selectedProjects.add(pref.name);
-          const second = readyProjects.find(p => p.name === 'DeployGate' || p.name === 'RevenueApp');
-          if (second) selectedProjects.add(second.name);
+        let restored = false;
+        try {
+          const saved = JSON.parse(localStorage.getItem('galaxy-selected-projects') || 'null');
+          if (Array.isArray(saved)) {
+            restored = true;
+            const ready = new Set(readyProjects.map(p => p.name));
+            saved.filter(n => ready.has(n)).forEach(n => selectedProjects.add(n));
+          }
+        } catch (e) { /* corrupted save ignored */ }
+        if (!restored) {
+          if (readyProjects.length <= 3) {
+            readyProjects.forEach(p => selectedProjects.add(p.name));
+          } else {
+            const pref = readyProjects.find(p => p.name === 'RDLib') || readyProjects[0];
+            selectedProjects.add(pref.name);
+            const second = readyProjects.find(p => p.name === 'DeployGate' || p.name === 'RevenueApp');
+            if (second) selectedProjects.add(second.name);
+          }
         }
       }
       
@@ -2874,6 +2885,8 @@ function selectAllProjects(select) {
 
 function loadRootGraph(isSilent = false) {
   clearTempReveal();
+  // Every selection change funnels through here — persist for reload.
+  try { localStorage.setItem('galaxy-selected-projects', JSON.stringify(Array.from(selectedProjects))); } catch (e) { /* ignore */ }
   if (selectedProjects.size === 0) {
     rawData = { nodes: [], links: [], unindexed_by_project: {} };
     applyFilter(false);

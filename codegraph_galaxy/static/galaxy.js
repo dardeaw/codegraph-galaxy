@@ -486,7 +486,12 @@ const I18N = {
     toast_kicked_out: '🗑 {n} removed from index ({nodes} nodes, {edges} edges). File stays on disk as unindexed.',
     toast_indexed_file: '⚡ {n} indexed. {pending} files still pending.',
     kickout_failed: 'Remove failed: {e}',
-    index_failed: 'Index failed: {e}'
+    index_failed: 'Index failed: {e}',
+    meta_indexed: 'DB: {n} nodes · {e} edges · indexed {at} · disk {size}',
+    meta_unindexed: 'Unindexed · disk {size} · modified {at}',
+    meta_missing: 'File not on disk and not in index.',
+    tree_status: '{r} repos · {n} nodes · {p} pending',
+    sync_indexed_toast: '⚡ {proj} synced: {added} nodes added, {resolved} files resolved.'
   },
   'zh-TW': {
     lang_btn: '語系: 繁中',
@@ -656,6 +661,11 @@ const I18N = {
     toast_indexed_file: '⚡ {n} 已入庫。還有 {pending} 個檔案待入庫。',
     kickout_failed: '踢出失敗：{e}',
     index_failed: '入庫失敗：{e}',
+    meta_indexed: '庫內：{n} 節點 · {e} 邊 · 建庫於 {at} · 磁碟 {size}',
+    meta_unindexed: '未入庫 · 磁碟 {size} · 修改於 {at}',
+    meta_missing: '磁碟上沒有此檔，索引內也沒有。',
+    tree_status: '{r} 個庫 · {n} 節點 · {p} 待入庫',
+    sync_indexed_toast: '⚡ {proj} 同步完成：新增 {added} 節點，解決 {resolved} 個待入庫。',
   }
 };
 
@@ -1461,10 +1471,19 @@ function buildProjectTree() {
   const readyProjects = allProjectsList.filter(p => p.status === 'ready');
   if (readyProjects.length === 0) {
     container.innerHTML = '<div style="font-size:11px; color:#8b949e; padding:8px;">No indexed repositories</div>';
+    const sb0 = document.getElementById('tree-statusbar');
+    if (sb0) sb0.innerText = t('tree_status', { r: 0, n: 0, p: 0 });
     return;
   }
 
   document.getElementById('lbl-proj-summary').innerText = t('active_summary', { n: selectedProjects.size });
+
+  const sbEl = document.getElementById('tree-statusbar');
+  if (sbEl) {
+    const totNodes = readyProjects.reduce((a, p) => a + (p.nodes || 0), 0);
+    const totPending = readyProjects.reduce((a, p) => a + (p.pending_sync_count || 0), 0);
+    sbEl.innerText = t('tree_status', { r: readyProjects.length, n: totNodes, p: totPending });
+  }
 
   // Build recursive directory structure for active nodes per project
   const projRoots = {};
@@ -2471,6 +2490,13 @@ function openDrawer(node) {
     dRm.onclick = kickable ? () => kickOutFile(node.project, node.file_path) : null;
   }
 
+  const dMeta = document.getElementById('d-meta');
+  if (kickable) {
+    loadFileMeta(node.project, node.file_path);
+  } else if (dMeta) {
+    dMeta.style.display = 'none';
+  }
+
   const absPath = node.abs_path || (node.file_path ? `${node.project_path || ''}/${node.file_path}` : '');
   const startLine = node.start_line || 1;
   const endLine = node.end_line || (node.kind === 'file' ? 1000 : startLine);
@@ -2587,6 +2613,8 @@ function openUnindexedFileDrawer(node) {
     dIdx.onclick = () => indexFile(node.project, node.file_path);
   }
 
+  loadFileMeta(node.project, node.file_path);
+
   const absPath = node.abs_path || (node.file_path ? `${node.project_path || ''}/${node.file_path}` : '');
   const encodedPath = encodeURIComponent(absPath.split(String.fromCharCode(92)).join('/'));
   document.getElementById('ide-antigravity').href = `vscode://file/${encodedPath}:1`;
@@ -2630,6 +2658,8 @@ function openDirDrawer(projName, dirPath, dirObj) {
 
   const dActsDir = document.getElementById('d-actions');
   if (dActsDir) dActsDir.style.display = 'none';
+  const dMetaDir = document.getElementById('d-meta');
+  if (dMetaDir) dMetaDir.style.display = 'none';
 
   document.getElementById('code-lines-badge').innerText = 'Directory Scope';
   
@@ -2676,6 +2706,8 @@ function openProjectDrawer(projName, projObj) {
 
   const dActsProj = document.getElementById('d-actions');
   if (dActsProj) dActsProj.style.display = 'none';
+  const dMetaProj = document.getElementById('d-meta');
+  if (dMetaProj) dMetaProj.style.display = 'none';
 
   document.getElementById('code-lines-badge').innerText = 'Project Scope';
   
@@ -4837,6 +4869,49 @@ window.indexFile = async function(project, filePath) {
   }
 };
 
+function fmtBytes(b) {
+  if (b === null || b === undefined) return '?';
+  if (b < 1024) return `${b} B`;
+  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1048576).toFixed(1)} MB`;
+}
+
+function fmtTime(ts) {
+  if (!ts) return '?';
+  try { return new Date(ts * 1000).toLocaleString(); } catch (e) { return '?'; }
+}
+
+// Detail pane: disk truth + index truth side by side (best-effort).
+function loadFileMeta(project, filePath) {
+  const metaEl = document.getElementById('d-meta');
+  if (!metaEl) return;
+  metaEl.style.display = 'none';
+  metaEl.innerText = '';
+  if (!project || !filePath) return;
+  fetch(`/api/file/info?project=${encodeURIComponent(project)}&file_path=${encodeURIComponent(filePath)}`)
+    .then(res => res.json())
+    .then(d => {
+      if (!d || !d.success) return;
+      if (d.in_index) {
+        const rec = d.record || {};
+        metaEl.innerText = t('meta_indexed', {
+          n: (d.live && d.live.nodes) || 0, e: (d.live && d.live.edges) || 0,
+          at: fmtTime(rec.indexed_at),
+          size: fmtBytes(d.disk ? d.disk.size : rec.size)
+        });
+      } else if (d.exists_on_disk) {
+        metaEl.innerText = t('meta_unindexed', {
+          size: fmtBytes(d.disk ? d.disk.size : null),
+          at: fmtTime(d.disk ? d.disk.mtime : null)
+        });
+      } else {
+        metaEl.innerText = t('meta_missing');
+      }
+      metaEl.style.display = 'block';
+    })
+    .catch(() => { /* meta is best-effort */ });
+}
+
 window.executeSyncSelected = async function() {
   if (!currentSyncProject) return;
   const btn = document.getElementById('btnSyncSelected');
@@ -4855,7 +4930,9 @@ window.executeSyncSelected = async function() {
     const data = await res.json();
     const result = data[currentSyncProject];
     if (result && result.success) {
-      showToast(t('sync_success_toast', { proj: currentSyncProject }));
+      const m = result.metrics;
+      showToast(m ? t('sync_indexed_toast', { proj: currentSyncProject, added: m.nodes_added || 0, resolved: m.pending_resolved || 0 })
+                  : t('sync_success_toast', { proj: currentSyncProject }));
       window.closeSyncReviewModal();
       const projRes = await fetch('/api/projects');
       allProjectsList = await projRes.json();

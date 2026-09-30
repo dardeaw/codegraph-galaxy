@@ -499,7 +499,11 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             return jsonify({"success": False,
                             "error": "Project not indexed"}), 400
         with _DB_WRITE_LOCK:
-            removed = FnRemoveIndexedFile(db, repo_path, rel_path)
+            try:
+                removed = FnRemoveIndexedFile(db, repo_path, rel_path)
+            except Exception as ex:
+                return jsonify({"success": False,
+                                "error": "Remove failed: %s" % ex}), 500
         return jsonify({"success": True, "removed": removed})
 
     @app.route("/api/files/remove", methods=["POST"])
@@ -528,7 +532,11 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             return jsonify({"success": False,
                             "error": "Project not indexed"}), 400
         with _DB_WRITE_LOCK:
-            removed = FnRemoveIndexedFiles(db, repo_path, rels)
+            try:
+                removed = FnRemoveIndexedFiles(db, repo_path, rels)
+            except Exception as ex:
+                return jsonify({"success": False,
+                                "error": "Remove failed: %s" % ex}), 500
         return jsonify({"success": True, "removed": removed})
 
     @app.route("/api/file/info", methods=["GET"])

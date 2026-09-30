@@ -184,7 +184,8 @@ def FnRemoveIndexedFiles(db_path: str, repo_path: str,
     Removes each file's nodes (FTS follows via nodes_ad trigger), attached
     edges, files-table record, and unresolved_refs, then cleans orphaned
     name_segment_vocab entries. Files stay on disk and reappear as pending.
-    Returns totals plus per-file counts.
+    Returns totals plus per-file counts. Raises on DB errors (lock/timeout)
+    so callers fail LOUDLY instead of reporting fake zeros.
     """
     normed: List[str] = []
     for r in rel_paths or []:
@@ -195,48 +196,47 @@ def FnRemoveIndexedFiles(db_path: str, repo_path: str,
         "files": 0, "nodes": 0, "edges": 0, "refs": 0, "paths": []}
     if not normed:
         return totals
+    # Busy timeout: CLI sync runs in its own process; wait out its write
+    # locks instead of failing instantly on "database is locked".
+    conn = sqlite3.connect(db_path, timeout=30)
     try:
-        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        for rel in normed:
+            rows = cur.execute(
+                "SELECT id FROM nodes WHERE file_path = ?",
+                (rel,)).fetchall()
+            v_ids = [x[0] for x in rows]
+            n_edges = n_nodes = 0
+            if v_ids:
+                ph = ",".join("?" * len(v_ids))
+                n_edges = cur.execute(
+                    f"DELETE FROM edges WHERE source IN ({ph}) OR target IN ({ph})",
+                    (*v_ids, *v_ids)).rowcount or 0
+                n_nodes = cur.execute(
+                    f"DELETE FROM nodes WHERE id IN ({ph})",
+                    (*v_ids,)).rowcount or 0
+            n_files = cur.execute(
+                "DELETE FROM files WHERE path = ?",
+                (rel,)).rowcount or 0
+            n_refs = cur.execute(
+                "DELETE FROM unresolved_refs WHERE file_path = ?",
+                (rel,)).rowcount or 0
+            totals["files"] += n_files
+            totals["nodes"] += n_nodes
+            totals["edges"] += n_edges
+            totals["refs"] += n_refs
+            totals["paths"].append({
+                "file_path": rel, "files": n_files, "nodes": n_nodes,
+                "edges": n_edges, "refs": n_refs})
         try:
-            cur = conn.cursor()
-            for rel in normed:
-                rows = cur.execute(
-                    "SELECT id FROM nodes WHERE file_path = ?",
-                    (rel,)).fetchall()
-                v_ids = [x[0] for x in rows]
-                n_edges = n_nodes = 0
-                if v_ids:
-                    ph = ",".join("?" * len(v_ids))
-                    n_edges = cur.execute(
-                        f"DELETE FROM edges WHERE source IN ({ph}) OR target IN ({ph})",
-                        (*v_ids, *v_ids)).rowcount or 0
-                    n_nodes = cur.execute(
-                        f"DELETE FROM nodes WHERE id IN ({ph})",
-                        (*v_ids,)).rowcount or 0
-                n_files = cur.execute(
-                    "DELETE FROM files WHERE path = ?",
-                    (rel,)).rowcount or 0
-                n_refs = cur.execute(
-                    "DELETE FROM unresolved_refs WHERE file_path = ?",
-                    (rel,)).rowcount or 0
-                totals["files"] += n_files
-                totals["nodes"] += n_nodes
-                totals["edges"] += n_edges
-                totals["refs"] += n_refs
-                totals["paths"].append({
-                    "file_path": rel, "files": n_files, "nodes": n_nodes,
-                    "edges": n_edges, "refs": n_refs})
-            try:
-                cur.execute(
-                    "DELETE FROM name_segment_vocab WHERE name NOT IN "
-                    "(SELECT DISTINCT name FROM nodes)")
-            except Exception:
-                pass  # older schema without vocab table
-            conn.commit()
-        finally:
-            conn.close()
-    except Exception:
-        return {"files": 0, "nodes": 0, "edges": 0, "refs": 0, "paths": []}
+            cur.execute(
+                "DELETE FROM name_segment_vocab WHERE name NOT IN "
+                "(SELECT DISTINCT name FROM nodes)")
+        except Exception:
+            pass  # older schema without vocab table
+        conn.commit()
+    finally:
+        conn.close()
     return totals
 
 

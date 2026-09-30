@@ -219,6 +219,69 @@ def FnRemoveIndexedFile(db_path: str, repo_path: str,
             "refs": n_refs}
 
 
+def FnFileInfo(db_path: str, repo_path: str,
+               rel_path: str) -> Dict[str, Any]:
+    """Read-only physical record: disk stat + files-table row + live counts.
+
+    Lets the file manager show disk truth and index truth side by side.
+    Never throws, never writes (read-only connection).
+    """
+    norm_rel = (rel_path or "").replace("\\", "/").strip("/")
+    info: Dict[str, Any] = {
+        "file_path": norm_rel, "exists_on_disk": False, "disk": None,
+        "in_index": False, "record": None,
+        "live": {"nodes": 0, "edges": 0},
+    }
+    if not norm_rel or norm_rel == ".." or norm_rel.startswith("../"):
+        return info
+    abs_repo = os.path.abspath(repo_path)
+    abs_file = os.path.abspath(os.path.join(abs_repo, norm_rel))
+    try:
+        if os.path.commonpath([abs_repo, abs_file]) != abs_repo:
+            return info
+    except Exception:
+        return info
+    if os.path.isfile(abs_file):
+        try:
+            st = os.stat(abs_file)
+            info["exists_on_disk"] = True
+            info["disk"] = {"size": st.st_size, "mtime": int(st.st_mtime)}
+        except Exception:
+            pass
+    if not db_path or not os.path.exists(db_path):
+        return info
+    try:
+        conn = sqlite3.connect("file:" + db_path + "?mode=ro", uri=True)
+        try:
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT path, content_hash, language, size, modified_at, "
+                "indexed_at, node_count, generated, errors FROM files "
+                "WHERE path = ?", (norm_rel,)).fetchone()
+            if row:
+                keys = ("path", "content_hash", "language", "size",
+                        "modified_at", "indexed_at", "node_count",
+                        "generated", "errors")
+                info["record"] = dict(zip(keys, row))
+                info["in_index"] = True
+            ids = [r[0] for r in cur.execute(
+                "SELECT id FROM nodes WHERE file_path = ?",
+                (norm_rel,)).fetchall()]
+            if ids:
+                info["in_index"] = True
+                ph = ",".join("?" * len(ids))
+                n_edges = cur.execute(
+                    f"SELECT COUNT(*) FROM edges WHERE source IN ({ph}) "
+                    f"OR target IN ({ph})",
+                    (*ids, *ids)).fetchone()[0]
+                info["live"] = {"nodes": len(ids), "edges": n_edges}
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return info
+
+
 def _FnLinkDocToDoc(proj_name: str, repo_path: str,
                     nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
                     loaded_node_ids: set) -> None:

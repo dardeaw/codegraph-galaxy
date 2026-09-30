@@ -6,7 +6,7 @@ from typing import Optional, List
 from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
-from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile
+from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile, FnFileInfo
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -500,6 +500,23 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         with _DB_WRITE_LOCK:
             removed = FnRemoveIndexedFile(db, repo_path, rel_path)
         return jsonify({"success": True, "removed": removed})
+
+    @app.route("/api/file/info", methods=["GET"])
+    def file_info():
+        """File-manager detail pane: disk stat + index record, side by side."""
+        project = (request.args.get("project") or "").strip()
+        rel_path = (request.args.get("file_path") or "").strip()
+        if not project or not rel_path:
+            return jsonify({"success": False,
+                            "error": "project and file_path required"}), 400
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        repo_path = repos.get(project)
+        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False,
+                            "error": "Unknown project"}), 400
+        info = FnFileInfo(get_db_path(repo_path), repo_path, rel_path)
+        return jsonify({"success": True, "project": project, **info})
 
     @app.route("/api/paths/add", methods=["POST"])
     def add_custom_path():

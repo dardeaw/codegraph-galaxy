@@ -465,13 +465,17 @@ const I18N = {
     tree_filter_ph: 'Filter explorer...',
     pending_sync_tip: 'Physical files on disk not indexed yet (Click to review & index)',
     dir_unindexed_tip: '{n} unindexed files inside (Click to review & index)',
-    sync_modal_title: 'Incremental Indexing & File Review',
-    sync_modal_sub: 'Inspect unindexed physical files on disk. Inspect source code, or batch index into CodeGraph.',
+    sync_modal_title: 'Indexing Manager',
+    sync_modal_sub: 'All source files. Checked = in index. Apply indexes new checks and removes unchecks.',
     sync_search_ph: '🔍 Filter file path or extension...',
     sync_sel_all: '✔ Select All',
     sync_sel_none: '✖ Clear',
-    sync_sel_count: 'Selected {n} / {total}',
-    sync_btn_sync: 'Index to CodeGraph',
+    sync_diff_count: 'Apply: index {i} · remove {r} ({total} files)',
+    sync_status_indexed: 'Indexed',
+    sync_apply_confirm: 'Apply indexing changes?\nIndex {i} files, remove {r} files from the index.',
+    sync_apply_toast: '⚡ Applied: +{added} nodes, {resolved} resolved, −{rfiles} files ({rnodes} nodes).',
+    sync_nothing_to_do: 'Nothing to apply — checks match the index.',
+    sync_btn_sync: 'Apply Indexing',
     sync_code_preview_tip: 'Select a file on the left to preview code',
     sync_code_empty_tip: 'Click any file in the list to view its source code',
     sync_no_unindexed: '🎉 All files in this project/directory are fully indexed!',
@@ -639,13 +643,17 @@ const I18N = {
     tree_filter_ph: '過濾檔案與符號...',
     pending_sync_tip: '硬碟實體存在但尚未入庫至 CodeGraph 的檔案（點擊檢閱並建庫）',
     dir_unindexed_tip: '內含 {n} 個未建庫檔案（點擊檢閱並建庫）',
-    sync_modal_title: '專案增量建庫與檔案檢閱',
-    sync_modal_sub: '檢閱尚未納入 CodeGraph 的實體檔案，可逐檔檢閱原始碼或勾選批次建庫。',
+    sync_modal_title: '入庫總管',
+    sync_modal_sub: '全部原始檔。勾選＝在庫裡；套用＝入庫新勾、踢掉取消勾。',
     sync_search_ph: '🔍 搜尋過濾檔案路徑或副檔名...',
     sync_sel_all: '✔ 全選',
     sync_sel_none: '✖ 全不選',
-    sync_sel_count: '已選 {n} / {total}',
-    sync_btn_sync: '執行 CodeGraph 索引建庫',
+    sync_diff_count: '套用：入庫 {i} ・ 踢出 {r}（共 {total} 檔）',
+    sync_status_indexed: '已入庫',
+    sync_apply_confirm: '確定套用入庫變更？\n入庫 {i} 個檔案，從索引踢出 {r} 個檔案。',
+    sync_apply_toast: '⚡ 已套用：＋{added} 節點，解決 {resolved} 個待入庫，踢出 {rfiles} 檔（{rnodes} 節點）。',
+    sync_nothing_to_do: '勾選與索引一致，無需套用。',
+    sync_btn_sync: '套用',
     sync_code_preview_tip: '請從左側點選檔案以預覽代碼',
     sync_code_empty_tip: '點擊左側檔案列表即可即時檢視代碼內容',
     sync_no_unindexed: '🎉 該專案/目錄之實體檔案已全數入庫！',
@@ -4548,9 +4556,33 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // ==================== CodeGraph Sync & Review Modal Logic ====================
 let currentSyncProject = null;
+let currentSyncSubDir = null;
+// currentSyncFiles entries: { path, indexed }. selectedSyncFiles = desired
+// membership (checked = in index; apply reconciles both ways).
 let currentSyncFiles = [];
 let selectedSyncFiles = new Set();
 let activePreviewFile = null;
+
+// Indexing manager state: every source file with its index membership.
+function buildSyncFileState(proj) {
+  const indexed = (proj && proj.indexed_files) ? [...proj.indexed_files] : [];
+  const fresh = (proj && proj.unindexed_files) ? [...proj.unindexed_files] : [];
+  let idx = indexed, fr = fresh;
+  if (currentSyncSubDir) {
+    const normSub = normSlash(currentSyncSubDir).toLowerCase();
+    const inScope = (f) => normSlash(f).toLowerCase().startsWith(normSub);
+    idx = idx.filter(inScope);
+    fr = fr.filter(inScope);
+  }
+  const idxSet = new Set(idx.map(f => normSlash(f)));
+  const all = [
+    ...idx.map(f => ({ path: f, indexed: true })),
+    ...fr.filter(f => !idxSet.has(normSlash(f))).map(f => ({ path: f, indexed: false }))
+  ];
+  all.sort((a, b) => a.path.localeCompare(b.path));
+  currentSyncFiles = all;
+  selectedSyncFiles = new Set(idx);
+}
 
 function normSlash(s) {
   return (s || '').split(String.fromCharCode(92)).join('/');
@@ -4596,7 +4628,7 @@ window.openSyncReviewModal = async function(projName, targetSubDir) {
   const projBadge = document.getElementById('syncModalProjectBadge');
   if (projBadge) projBadge.textContent = projName;
 
-  // Always fetch latest project list to guarantee fresh unindexed_files list
+  // Always fetch latest project list to guarantee fresh file lists
   try {
     const res = await fetch('/api/projects');
     allProjectsList = await res.json();
@@ -4605,17 +4637,11 @@ window.openSyncReviewModal = async function(projName, targetSubDir) {
   }
 
   const proj = (allProjectsList || []).find(p => p.name === projName);
-  let files = (proj && proj.unindexed_files) ? [...proj.unindexed_files] : [];
-  
-  if (targetSubDir && typeof targetSubDir === 'string' && targetSubDir !== 'null' && targetSubDir !== 'undefined') {
-    const normSub = normSlash(targetSubDir).toLowerCase();
-    files = files.filter(f => normSlash(f).toLowerCase().startsWith(normSub));
-  }
+  currentSyncSubDir = (typeof targetSubDir === 'string' && targetSubDir !== 'null' && targetSubDir !== 'undefined') ? targetSubDir : null;
+  buildSyncFileState(proj);
 
-  console.log('Found unindexed files:', files.length, 'for', projName);
-  currentSyncFiles = files;
-  selectedSyncFiles = new Set(files);
-  activePreviewFile = files.length > 0 ? files[0] : null;
+  console.log('Indexing manager:', currentSyncFiles.length, 'files for', projName);
+  activePreviewFile = currentSyncFiles.length > 0 ? currentSyncFiles[0].path : null;
 
   window.renderSyncFileList();
   if (activePreviewFile) {
@@ -4642,7 +4668,7 @@ window.renderSyncFileList = function() {
   if (!listEl) return;
 
   listEl.innerHTML = '';
-  const filtered = currentSyncFiles.filter(f => !searchVal || f.toLowerCase().includes(searchVal));
+  const filtered = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
 
   if (filtered.length === 0) {
     listEl.innerHTML = `
@@ -4650,11 +4676,13 @@ window.renderSyncFileList = function() {
         ${currentSyncFiles.length === 0 ? t('sync_no_unindexed') : t('sync_no_match')}
       </div>
     `;
-    updateSyncCountText();
+    updateSyncDiffText();
     return;
   }
 
-  filtered.forEach(filePath => {
+  filtered.forEach(entry => {
+    const filePath = entry.path;
+    const rowIndexed = !!entry.indexed;
     const isChecked = selectedSyncFiles.has(filePath);
     const isActive = activePreviewFile === filePath;
     const icon = getSyncFileIcon(filePath);
@@ -4686,7 +4714,7 @@ window.renderSyncFileList = function() {
         <span style="color: ${isActive ? '#58a6ff' : '#c9d1d9'}; font-weight: 500; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</span>
         ${dirPath ? `<span style="color: #6e7681; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dirPath}</span>` : ''}
       </div>
-      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: rgba(210,153,34,0.15); color: #d29922; border: 1px solid rgba(210,153,34,0.3); flex-shrink: 0;">${t('sync_status_unindexed')}</span>
+      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${rowIndexed ? 'rgba(35,134,54,0.15)' : 'rgba(210,153,34,0.15)'}; color: ${rowIndexed ? '#3fb950' : '#d29922'}; border: 1px solid ${rowIndexed ? 'rgba(35,134,54,0.3)' : 'rgba(210,153,34,0.3)'}; flex-shrink: 0;">${rowIndexed ? t('sync_status_indexed') : t('sync_status_unindexed')}</span>
     `;
 
     const chk = row.querySelector('input[type="checkbox"]');
@@ -4697,7 +4725,7 @@ window.renderSyncFileList = function() {
       } else {
         selectedSyncFiles.delete(filePath);
       }
-      updateSyncCountText();
+      updateSyncDiffText();
     };
 
     row.onclick = () => {
@@ -4709,7 +4737,7 @@ window.renderSyncFileList = function() {
     listEl.appendChild(row);
   });
 
-  updateSyncCountText();
+  updateSyncDiffText();
 };
 
 window.filterSyncFileList = function() {
@@ -4718,21 +4746,33 @@ window.filterSyncFileList = function() {
 
 window.toggleAllSyncFiles = function(select) {
   const searchVal = (document.getElementById('syncModalSearch')?.value || '').trim().toLowerCase();
-  const visibleFiles = currentSyncFiles.filter(f => !searchVal || f.toLowerCase().includes(searchVal));
+  const visibleFiles = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
   
-  visibleFiles.forEach(f => {
-    if (select) selectedSyncFiles.add(f);
-    else selectedSyncFiles.delete(f);
+  visibleFiles.forEach(e => {
+    if (select) selectedSyncFiles.add(e.path);
+    else selectedSyncFiles.delete(e.path);
   });
 
   window.renderSyncFileList();
 };
 
-function updateSyncCountText() {
+function updateSyncDiffText() {
   const countEl = document.getElementById('syncSelectionCount');
   if (countEl) {
-    countEl.textContent = t('sync_sel_count', { n: selectedSyncFiles.size, total: currentSyncFiles.length });
+    const d = syncDesiredDiff();
+    countEl.textContent = t('sync_diff_count', { i: d.toIndex, r: d.toRemove, total: currentSyncFiles.length });
   }
+}
+
+// Desired vs actual: checked-but-unindexed get indexed, indexed-but-unchecked get removed.
+function syncDesiredDiff() {
+  const desired = selectedSyncFiles;
+  let toIndex = 0, toRemove = 0;
+  for (const e of currentSyncFiles) {
+    if (desired.has(e.path) && !e.indexed) toIndex++;
+    if (!desired.has(e.path) && e.indexed) toRemove++;
+  }
+  return { toIndex, toRemove };
 }
 
 function resetSyncCodeViewer() {
@@ -4766,7 +4806,8 @@ window.selectSyncFileForPreview = async function(filePath) {
   if (iconEl) iconEl.textContent = getSyncFileIcon(filePath);
   if (badgeEl) {
     badgeEl.style.display = 'inline-block';
-    badgeEl.textContent = t('sync_status_unindexed');
+    const ent = (currentSyncFiles || []).find(e => e.path === filePath);
+    badgeEl.textContent = (ent && ent.indexed) ? t('sync_status_indexed') : t('sync_status_unindexed');
   }
   if (actionsEl) actionsEl.style.display = 'flex';
   if (contentEl) {
@@ -4912,8 +4953,35 @@ function loadFileMeta(project, filePath) {
     .catch(() => { /* meta is best-effort */ });
 }
 
-window.executeSyncSelected = async function() {
+async function reloadSyncFileList() {
+  try {
+    const projRes = await fetch('/api/projects');
+    allProjectsList = await projRes.json();
+  } catch (e) { /* keep last good list */ }
+  const proj = (allProjectsList || []).find(p => p.name === currentSyncProject);
+  buildSyncFileState(proj);
+  window.renderSyncFileList();
+  if (activePreviewFile && currentSyncFiles.some(e => e.path === activePreviewFile)) {
+    window.selectSyncFileForPreview(activePreviewFile);
+  } else if (currentSyncFiles.length) {
+    activePreviewFile = currentSyncFiles[0].path;
+    window.selectSyncFileForPreview(activePreviewFile);
+  } else {
+    activePreviewFile = null;
+    resetSyncCodeViewer();
+  }
+}
+
+// Indexing manager apply: index new checks, then remove unchecks (sync
+// re-adds everything on disk, so removals must go last).
+window.applyIndexing = async function() {
   if (!currentSyncProject) return;
+  const diff = syncDesiredDiff();
+  if (diff.toIndex === 0 && diff.toRemove === 0) {
+    showToast(t('sync_nothing_to_do'));
+    return;
+  }
+  if (diff.toRemove > 0 && !confirm(t('sync_apply_confirm', { r: diff.toRemove, i: diff.toIndex }))) return;
   const btn = document.getElementById('btnSyncSelected');
   const originalText = btn ? btn.innerHTML : '';
   if (btn) {
@@ -4922,26 +4990,36 @@ window.executeSyncSelected = async function() {
   }
 
   try {
-    const res = await fetch('/api/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projects: [currentSyncProject] })
-    });
-    const data = await res.json();
-    const result = data[currentSyncProject];
-    if (result && result.success) {
-      const m = result.metrics;
-      showToast(m ? t('sync_indexed_toast', { proj: currentSyncProject, added: m.nodes_added || 0, resolved: m.pending_resolved || 0 })
-                  : t('sync_success_toast', { proj: currentSyncProject }));
-      window.closeSyncReviewModal();
-      const projRes = await fetch('/api/projects');
-      allProjectsList = await projRes.json();
-      loadRootGraph();
-    } else {
-      alert(`Indexing issue: ${result?.error || result?.output || 'Check logs'}`);
+    let added = 0, resolved = 0, rfiles = 0, rnodes = 0;
+    if (diff.toIndex > 0) {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject })
+      });
+      const data = await res.json();
+      const per = data[currentSyncProject];
+      if (!per || !per.success) throw new Error((per && per.error) || 'sync failed');
+      added = (per.metrics && per.metrics.nodes_added) || 0;
+      resolved = (per.metrics && per.metrics.pending_resolved) || 0;
     }
+    const unchecked = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path)).map(e => e.path);
+    if (unchecked.length > 0) {
+      const res2 = await fetch('/api/files/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject, file_paths: unchecked })
+      });
+      const d2 = await res2.json();
+      if (!d2.success) throw new Error(d2.error || 'remove failed');
+      rfiles = (d2.removed && d2.removed.files) || 0;
+      rnodes = (d2.removed && d2.removed.nodes) || 0;
+    }
+    showToast(t('sync_apply_toast', { added, resolved, rfiles, rnodes }));
+    loadRootGraph();
+    await reloadSyncFileList();
   } catch (err) {
-    alert(`Indexing error: ${err.message}`);
+    alert(t('index_failed', { e: err.message }));
   } finally {
     if (btn) {
       btn.disabled = false;

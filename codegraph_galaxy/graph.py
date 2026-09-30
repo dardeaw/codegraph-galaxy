@@ -169,6 +169,57 @@ def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
     _FnLinkDocToDoc(proj_name, repo_path, nodes, links, loaded_node_ids)
 
 
+def FnPruneExcludedFiles(db_path: str, repo_path: str,
+                         excluded_abspaths: List[str]) -> Dict[str, Any]:
+    """Delete codegraph rows for user-excluded files (per-file kick-out).
+
+    The CLI offers no exclude flag, so exclusion is enforced here: after every
+    sync/init/reindex and immediately on exclude, rows whose file_path falls
+    under an excluded path are removed with their edges. Returns counts.
+    """
+    abs_repo = os.path.abspath(repo_path)
+    v_targets: List[str] = []
+    for p in excluded_abspaths or []:
+        try:
+            abs_p = os.path.abspath(p)
+        except Exception:
+            continue
+        if abs_p == abs_repo or os.path.commonpath([abs_repo, abs_p]) != abs_repo:
+            continue
+        v_targets.append(os.path.relpath(abs_p, abs_repo).replace(os.sep, "/"))
+    if not v_targets:
+        return {"files": 0, "nodes": 0, "edges": 0}
+    n_files = n_nodes = n_edges = 0
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            cur = conn.cursor()
+            for rel in v_targets:
+                if os.path.splitext(rel)[1]:
+                    cond = "file_path = ?"
+                    args: Any = (rel,)
+                else:
+                    cond = "file_path = ? OR file_path LIKE ?"
+                    args = (rel, rel.rstrip("/") + "/%")
+                rows = cur.execute(
+                    f"SELECT id FROM nodes WHERE {cond}", args).fetchall()
+                v_ids = [r[0] for r in rows]
+                if v_ids:
+                    n_files += 1
+                    ph = ",".join("?" * len(v_ids))
+                    n_edges += cur.execute(
+                        f"DELETE FROM edges WHERE source IN ({ph}) OR target IN ({ph})",
+                        (*v_ids, *v_ids)).rowcount or 0
+                    n_nodes += cur.execute(
+                        f"DELETE FROM nodes WHERE id IN ({ph})", (*v_ids,)).rowcount or 0
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        return {"files": 0, "nodes": 0, "edges": 0}
+    return {"files": n_files, "nodes": n_nodes, "edges": n_edges}
+
+
 def _FnLinkDocToDoc(proj_name: str, repo_path: str,
                     nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
                     loaded_node_ids: set) -> None:

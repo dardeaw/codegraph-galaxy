@@ -5,7 +5,7 @@ from typing import Optional, List
 from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
-from .graph import fetch_project_graph, extract_code_snippet
+from .graph import fetch_project_graph, extract_code_snippet, FnPruneExcludedFiles
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -360,22 +360,40 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             "Access-Control-Allow-Origin": "*",
         })
 
+    def _FnPruneRepo(repo_path: str) -> dict:
+        """Best-effort post-sync pruning of user-excluded files. Never throws."""
+        try:
+            db = get_db_path(repo_path)
+            if not db:
+                return {"files": 0, "nodes": 0, "edges": 0}
+            return FnPruneExcludedFiles(db, repo_path, load_config().get("excluded_paths", []))
+        except Exception:
+            return {"files": 0, "nodes": 0, "edges": 0}
+
     @app.route("/api/sync", methods=["POST"])
     def sync_all():
         data = request.get_json(silent=True) or {}
         target_path = data.get("path")
         roots = get_search_roots(search_roots)
         repos = scan_repositories(roots)
-        
+
         target_repos: list = []
         if target_path:
             abs_target = os.path.abspath(target_path)
             if abs_target not in _known_repo_paths(repos):
-                return jsonify({os.path.basename(abs_target): {"success": False, "error": "Unknown repository path"}}), 400
-            target_repos = [abs_target]
-        else:
-            target_repos = [p for p in repos.values() if get_db_path(p)]
+                return jsonify({"success": False, "error": "Unknown repository path"}), 400
+            per = execute_sync([abs_target]).get(os.path.basename(abs_target)) or {}
+            if per.get("success"):
+                per["pruned"] = _FnPruneRepo(abs_target)
+                return jsonify({"success": True, "output": per.get("output", ""),
+                                "pruned": per["pruned"]})
+            return jsonify({"success": False, "error": per.get("error", "sync failed")}), 500
+        target_repos = [p for p in repos.values() if get_db_path(p)]
         outputs = execute_sync(target_repos)
+        for r in target_repos:
+            name = os.path.basename(r)
+            if isinstance(outputs.get(name), dict) and outputs[name].get("success"):
+                outputs[name]["pruned"] = _FnPruneRepo(r)
         return jsonify(outputs)
 
     @app.route("/api/project/exclude", methods=["POST"])
@@ -400,7 +418,24 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                     added.append(np)
         if added:
             save_config(cfg)
-        return jsonify({"success": True, "excluded": added or [os.path.abspath(p) for p in paths]})
+        pruned_total = {"files": 0, "nodes": 0, "edges": 0}
+        if added:
+            roots = get_search_roots(search_roots)
+            repos = scan_repositories(roots)
+            v_touched = set()
+            for p in added:
+                for _name, r in repos.items():
+                    try:
+                        if r == p or os.path.commonpath([r, p]) == r:
+                            v_touched.add(r)
+                    except Exception:
+                        continue
+            for r in v_touched:
+                d = _FnPruneRepo(r)
+                for k in pruned_total:
+                    pruned_total[k] += d.get(k, 0)
+        return jsonify({"success": True, "excluded": added or [os.path.abspath(p) for p in paths],
+                        "pruned": pruned_total})
 
     @app.route("/api/project/init", methods=["POST"])
     def init_project():
@@ -411,7 +446,8 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         ok, out = execute_init(target_path)
         if ok:
-            return jsonify({"success": True, "output": out})
+            return jsonify({"success": True, "output": out,
+                            "pruned": _FnPruneRepo(os.path.abspath(target_path))})
         return jsonify({"success": False, "error": out}), 500
 
     @app.route("/api/project/uninit", methods=["POST"])
@@ -445,7 +481,8 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         ok, out = execute_reindex(target_path)
         if ok:
-            return jsonify({"success": True, "output": out})
+            return jsonify({"success": True, "output": out,
+                            "pruned": _FnPruneRepo(os.path.abspath(target_path))})
         return jsonify({"success": False, "error": out}), 500
 
     @app.route("/api/paths/add", methods=["POST"])

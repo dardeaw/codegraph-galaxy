@@ -465,6 +465,7 @@ const I18N = {
     tree_filter_ph: 'Filter explorer...',
     pending_sync_tip: 'Physical files on disk not indexed yet (Click to review & index)',
     dir_unindexed_tip: '{n} unindexed files inside (Click to review & index)',
+    indexed_clean_tip: 'Fully indexed — click to open indexing manager',
     sync_modal_title: 'Indexing Manager',
     sync_modal_sub: 'All source files. Checked = in index. Sync indexes new checks and removes unchecks.',
     sync_search_ph: '🔍 Filter file path or extension...',
@@ -643,6 +644,7 @@ const I18N = {
     tree_filter_ph: '過濾檔案與符號...',
     pending_sync_tip: '硬碟實體存在但尚未入庫至 CodeGraph 的檔案（點擊檢閱並建庫）',
     dir_unindexed_tip: '內含 {n} 個未建庫檔案（點擊檢閱並建庫）',
+    indexed_clean_tip: '已全數入庫——點擊開啟入庫總管',
     sync_modal_title: '入庫總管',
     sync_modal_sub: '全部原始檔。勾選＝在庫裡；同步＝入庫新勾、踢掉取消勾。',
     sync_search_ph: '🔍 搜尋過濾檔案路徑或副檔名...',
@@ -1592,7 +1594,7 @@ function buildProjectTree() {
       <span class="tree-arrow ${isProjOpen ? 'open' : ''}">▸</span>
       <input type="checkbox" ${isSelected ? 'checked' : ''} title="Toggle project inclusion" />
       <span style="font-weight:600; color:#58a6ff;">📦 ${projName}</span>
-      ${pendingCount > 0 ? `<span class="sync-delta-badge" title="${t('pending_sync_tip')}">⚡ ${pendingCount}</span>` : ''}
+      ${pendingCount > 0 ? `<span class="sync-delta-badge" title="${t('pending_sync_tip')}">⚡ ${pendingCount}</span>` : `<span class="sync-delta-badge" style="opacity:0.45;" title="${t('indexed_clean_tip')}">✓</span>`}
       <span class="node-kind-tag" style="margin-left:${pendingCount > 0 ? '4px' : 'auto'};">${isSelected ? 'active' : 'off'}</span>
     `;
 
@@ -1717,7 +1719,7 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     dirNodeEl.innerHTML = `
       <span class="tree-arrow ${isDirOpen ? 'open' : ''}">▸</span>
       <span style="font-weight:500; color:#e6edf3;">📁 ${dName}</span>
-      ${unindexedCount > 0 ? `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('dir_unindexed_tip', { n: unindexedCount })}">⚡ ${unindexedCount}</span>` : ''}
+      ${unindexedCount > 0 ? `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('dir_unindexed_tip', { n: unindexedCount })}">⚡ ${unindexedCount}</span>` : `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto; opacity:0.45;" title="${t('indexed_clean_tip')}">✓</span>`}
     `;
 
     const deltaBadgeEl = dirNodeEl.querySelector('.sync-delta-badge');

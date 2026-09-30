@@ -480,7 +480,13 @@ const I18N = {
     sync_loading: 'Loading source code...',
     sync_in_progress: 'CodeGraph indexing in progress...',
     sync_success_toast: '✅ {proj} indexing complete!',
-    sync_lines: '{n} lines'
+    sync_lines: '{n} lines',
+    d_index_file: 'Index File',
+    d_remove_file: 'Remove from Index',
+    toast_kicked_out: '🗑 {n} removed from index ({nodes} nodes, {edges} edges). File stays on disk as unindexed.',
+    toast_indexed_file: '⚡ {n} indexed. {pending} files still pending.',
+    kickout_failed: 'Remove failed: {e}',
+    index_failed: 'Index failed: {e}'
   },
   'zh-TW': {
     lang_btn: '語系: 繁中',
@@ -643,7 +649,13 @@ const I18N = {
     sync_loading: '載入原始碼中...',
     sync_in_progress: 'CodeGraph 索引建庫中...',
     sync_success_toast: '✅ {proj} 索引建庫完成！',
-    sync_lines: '{n} 行'
+    sync_lines: '{n} 行',
+    d_index_file: '檔案入庫',
+    d_remove_file: '踢出索引',
+    toast_kicked_out: '🗑 {n} 已踢出索引（{nodes} 節點、{edges} 邊）。檔案仍在磁碟上，標示為未入庫。',
+    toast_indexed_file: '⚡ {n} 已入庫。還有 {pending} 個檔案待入庫。',
+    kickout_failed: '踢出失敗：{e}',
+    index_failed: '入庫失敗：{e}',
   }
 };
 
@@ -2445,6 +2457,20 @@ function openDrawer(node) {
   badge.style.background = KIND_COLORS[node.kind] || '#1f6feb';
   badge.style.color = '#fff';
 
+  // File-manager actions: kick an indexed file out of the DB (stays on disk).
+  const kickable = !!(node && node.project && node.file_path && node.kind !== 'doc' && !node.is_unindexed);
+  const dActs = document.getElementById('d-actions');
+  if (dActs) dActs.style.display = kickable ? 'flex' : 'none';
+  const dIdx = document.getElementById('d-btn-index');
+  if (dIdx) dIdx.style.display = 'none';
+  const dRm = document.getElementById('d-btn-remove');
+  if (dRm) {
+    dRm.style.display = kickable ? '' : 'none';
+    const lblRm = document.getElementById('lbl-d-remove');
+    if (lblRm) lblRm.textContent = t('d_remove_file');
+    dRm.onclick = kickable ? () => kickOutFile(node.project, node.file_path) : null;
+  }
+
   const absPath = node.abs_path || (node.file_path ? `${node.project_path || ''}/${node.file_path}` : '');
   const startLine = node.start_line || 1;
   const endLine = node.end_line || (node.kind === 'file' ? 1000 : startLine);
@@ -2548,6 +2574,19 @@ function openUnindexedFileDrawer(node) {
   badge.style.background = KIND_COLORS.unindexed_file;
   badge.style.color = '#fff';
 
+  // File-manager actions: index this physical file (scoped project sync).
+  const dActs = document.getElementById('d-actions');
+  if (dActs) dActs.style.display = 'flex';
+  const dRm = document.getElementById('d-btn-remove');
+  if (dRm) dRm.style.display = 'none';
+  const dIdx = document.getElementById('d-btn-index');
+  if (dIdx) {
+    dIdx.style.display = '';
+    const lblIdx = document.getElementById('lbl-d-index');
+    if (lblIdx) lblIdx.textContent = t('d_index_file');
+    dIdx.onclick = () => indexFile(node.project, node.file_path);
+  }
+
   const absPath = node.abs_path || (node.file_path ? `${node.project_path || ''}/${node.file_path}` : '');
   const encodedPath = encodeURIComponent(absPath.split(String.fromCharCode(92)).join('/'));
   document.getElementById('ide-antigravity').href = `vscode://file/${encodedPath}:1`;
@@ -2588,6 +2627,9 @@ function openDirDrawer(projName, dirPath, dirObj) {
   badge.innerText = 'DIRECTORY';
   badge.style.background = KIND_COLORS.directory;
   badge.style.color = '#fff';
+
+  const dActsDir = document.getElementById('d-actions');
+  if (dActsDir) dActsDir.style.display = 'none';
 
   document.getElementById('code-lines-badge').innerText = 'Directory Scope';
   
@@ -2631,6 +2673,9 @@ function openProjectDrawer(projName, projObj) {
   badge.innerText = 'PROJECT';
   badge.style.background = KIND_COLORS.project;
   badge.style.color = '#fff';
+
+  const dActsProj = document.getElementById('d-actions');
+  if (dActsProj) dActsProj.style.display = 'none';
 
   document.getElementById('code-lines-badge').innerText = 'Project Scope';
   
@@ -4729,6 +4774,66 @@ window.openSyncFileInIDE = function(ideType) {
     window.location.href = `antigravity://file/${fullPath}:1:1`;
   } else {
     window.location.href = `vscode://file/${fullPath}:1:1`;
+  }
+};
+
+// ==========================================
+// File-manager actions: direct per-file index management
+// ==========================================
+function refreshAfterIndexChange() {
+  return fetch('/api/projects')
+    .then(res => res.json())
+    .then(projs => {
+      allProjectsList = projs;
+      loadRootGraph();
+      if (typeof loadManagerList === 'function') {
+        try { loadManagerList(); } catch (e) { /* ignore */ }
+      }
+    })
+    .catch(() => { /* keep last good state */ });
+}
+
+window.kickOutFile = async function(project, filePath) {
+  if (!project || !filePath) return;
+  try {
+    const res = await fetch('/api/file/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, file_path: filePath })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const r = data.removed || {};
+      showToast(t('toast_kicked_out', { n: filePath, nodes: r.nodes || 0, edges: r.edges || 0 }));
+      closeDrawer();
+      await refreshAfterIndexChange();
+    } else {
+      alert(t('kickout_failed', { e: data.error || '' }));
+    }
+  } catch (err) {
+    alert(t('kickout_failed', { e: err.message }));
+  }
+};
+
+window.indexFile = async function(project, filePath) {
+  if (!project || !filePath) return;
+  try {
+    const res = await fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project })
+    });
+    const data = await res.json();
+    const per = data[project];
+    if (per && per.success) {
+      const m = per.metrics ? per.metrics.after : null;
+      showToast(t('toast_indexed_file', { n: filePath, pending: m ? m.pending : '?' }));
+      await refreshAfterIndexChange();
+    } else {
+      alert(t('index_failed', { e: (per && per.error) || data.error || '' }));
+    }
+  } catch (err) {
+    alert(t('index_failed', { e: err.message }));
   }
 };
 

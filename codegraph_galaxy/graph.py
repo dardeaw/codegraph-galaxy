@@ -102,12 +102,12 @@ def _FnDocStem(str_name: str) -> str:
 def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
                      nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
                      loaded_node_ids: set) -> None:
-    """Merge markdown docs as first-class graph citizens (overview loads only).
+    """Merge docs as first-class graph citizens (overview loads only).
 
-    codegraph CLI never indexes .md, so docs are synthesized here: one `doc`
-    node per markdown file. Edges are earned, not blanket-connected:
-    same-stem match (Chart.md <-> Chart.ts) or the doc body mentioning the
-    module stem. Unrelated co-location creates no edge.
+    codegraph CLI never indexes .md/.json/.html, so docs are synthesized
+    here: one `doc` node per doc file. Edges are earned, not blanket-
+    connected: same-stem match (Chart.md <-> Chart.ts) or the doc body
+    mentioning the module stem. Unrelated co-location creates no edge.
     """
     try:
         v_docs = docs_lib.FnListDocs(repo_path)

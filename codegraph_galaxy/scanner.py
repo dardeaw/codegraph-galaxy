@@ -2,7 +2,7 @@
 import os
 import sqlite3
 from typing import Dict, List, Optional, Set, Tuple
-from .constants import IGNORE_DIRS, SRC_EXTS
+from .constants import IGNORE_DIRS, SRC_EXTS, DOC_EXTS
 
 def get_db_path(repo_path: str) -> Optional[str]:
     """Return SQLite database path for a CodeGraph repository if present."""
@@ -43,7 +43,11 @@ def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], Lis
         pass
 
     disk_files = scan_disk_files(repo_path)
-    unindexed = sorted(list(disk_files - indexed_files))
+    # Doc citizens (.md/.json/.html) live beside the graph, never as pending:
+    # the CLI has no grammar for them, so nagging "index me" is a lie.
+    unindexed = sorted(
+        f for f in (disk_files - indexed_files)
+        if not f.lower().endswith(DOC_EXTS))
     return node_count, edge_count, unindexed, sorted(indexed_files)
 
 def scan_repositories(search_roots: List[str]) -> Dict[str, str]:

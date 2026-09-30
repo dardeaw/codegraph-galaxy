@@ -1,12 +1,13 @@
-"""Docs layer for galaxy chat: read .md files next to the code (stdlib only).
+"""Docs layer for galaxy chat: read doc files next to the code (stdlib only).
 
-codegraph CLI never indexes markdown, so docs live beside the graph, not in
-it. The code<->docs link happens at query time: search/read/related tools
-plus file-node highlights that land on the 3D graph.
+codegraph CLI never indexes markdown/json/html, so docs live beside the
+graph, not in it. The code<->docs link happens at query time: search/read/
+related tools plus file-node highlights that land on the 3D graph.
 """
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
+from .constants import DOC_EXTS
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _SKIP_DIRS = {".git", ".codegraph", ".docgraph", "node_modules", "__pycache__",
@@ -26,13 +27,13 @@ def _FnSafeJoin(str_repo: str, str_rel: str) -> str:
 
 
 def FnListDocs(str_repo: str, n_max: int = MAX_FILES) -> List[Dict[str, Any]]:
-    """All markdown files under a repo (relative paths, size bytes)."""
+    """All doc files under a repo (relative paths, size bytes)."""
     abs_repo = os.path.abspath(str_repo)
     v_out: List[Dict[str, Any]] = []
     for dp, dn, fn in os.walk(abs_repo):
         dn[:] = sorted(d for d in dn if d not in _SKIP_DIRS and not d.startswith("."))
         for f in sorted(fn):
-            if not f.lower().endswith(_MD_EXTS):
+            if not f.lower().endswith(DOC_EXTS):
                 continue
             full = os.path.join(dp, f)
             try:

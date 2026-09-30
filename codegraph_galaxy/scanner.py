@@ -3,7 +3,6 @@ import os
 import sqlite3
 from typing import Dict, List, Optional, Set, Tuple
 from .constants import IGNORE_DIRS, SRC_EXTS
-from .config import load_config
 
 def get_db_path(repo_path: str) -> Optional[str]:
     """Return SQLite database path for a CodeGraph repository if present."""
@@ -50,9 +49,6 @@ def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str]]:
 def scan_repositories(search_roots: List[str]) -> Dict[str, str]:
     """Scan search roots and return a dict of {project_name: abs_path}."""
     repos: Dict[str, str] = {}
-    cfg = load_config()
-    excluded_paths = set(os.path.abspath(p) for p in cfg.get("excluded_paths", []))
-    
     for root in search_roots:
         if not os.path.exists(root):
             continue
@@ -68,8 +64,6 @@ def scan_repositories(search_roots: List[str]) -> Dict[str, str]:
                     continue
                 
                 abs_full = os.path.abspath(full_path)
-                if abs_full in excluded_paths:
-                    continue
 
                 has_cg = os.path.isdir(os.path.join(full_path, ".codegraph"))
                 has_git = os.path.isdir(os.path.join(full_path, ".git"))
@@ -88,8 +82,7 @@ def scan_repositories(search_roots: List[str]) -> Dict[str, str]:
 
         if not has_sub_repos and os.path.isdir(os.path.join(root, ".codegraph")):
             abs_root = os.path.abspath(root)
-            if abs_root not in excluded_paths:
-                name = os.path.basename(root) or root
-                repos[name] = abs_root
+            name = os.path.basename(root) or root
+            repos[name] = abs_root
             
     return repos

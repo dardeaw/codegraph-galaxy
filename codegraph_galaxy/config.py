@@ -12,15 +12,15 @@ def load_config() -> Dict[str, List[str]]:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 roots = data.get("custom_roots") or data.get("custom_paths") or []
-                excluded = data.get("excluded_paths") or []
-                return {"custom_roots": roots, "excluded_paths": excluded}
+                return {"custom_roots": roots}
         except Exception:
             pass
-    return {"custom_roots": [], "excluded_paths": []}
+    return {"custom_roots": []}
 
 def save_config(cfg: Dict[str, List[str]]) -> None:
     """Save configuration to user home directory."""
     try:
+        cfg = {k: v for k, v in cfg.items() if k != "excluded_paths"}
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2, ensure_ascii=False)
     except Exception as e:

@@ -6,7 +6,7 @@ from typing import Optional, List
 from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
-from .graph import fetch_project_graph, extract_code_snippet, FnPruneExcludedFiles, FnRemoveIndexedFile
+from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -365,16 +365,6 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             "Access-Control-Allow-Origin": "*",
         })
 
-    def _FnPruneRepo(repo_path: str) -> dict:
-        """Best-effort post-sync pruning of user-excluded files. Never throws."""
-        try:
-            db = get_db_path(repo_path)
-            if not db:
-                return {"files": 0, "nodes": 0, "edges": 0}
-            return FnPruneExcludedFiles(db, repo_path, load_config().get("excluded_paths", []))
-        except Exception:
-            return {"files": 0, "nodes": 0, "edges": 0}
-
     @app.route("/api/sync", methods=["POST"])
     def sync_all():
         data = request.get_json(silent=True) or {}
@@ -417,7 +407,6 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                      "output": per.get("output", ""),
                      "error": per.get("error", "")}
             if entry["success"]:
-                entry["pruned"] = _FnPruneRepo(r)
                 aft = _metrics(r)
                 entry["metrics"] = {
                     "before": before[r], "after": aft,
@@ -431,51 +420,9 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             single = out[os.path.basename(target_repos[0])]
             if single["success"]:
                 return jsonify({"success": True, "output": single["output"],
-                                "pruned": single.get("pruned"),
                                 "metrics": single.get("metrics")})
             return jsonify({"success": False, "error": single.get("error", "sync failed")}), 500
         return jsonify(out)
-
-    @app.route("/api/project/exclude", methods=["POST"])
-    def exclude_project():
-        data = request.get_json(silent=True) or {}
-        target_path = data.get("path", "").strip()
-        paths = data.get("paths") or []
-        if target_path and target_path not in paths:
-            paths.append(target_path)
-
-        if not paths:
-            return jsonify({"success": False, "error": "Path or paths required"}), 400
-
-        cfg = load_config()
-        excluded = cfg.setdefault("excluded_paths", [])
-        added = []
-        for p in paths:
-            if isinstance(p, str) and p.strip():
-                np = os.path.abspath(p.strip())
-                if np not in excluded:
-                    excluded.append(np)
-                    added.append(np)
-        if added:
-            save_config(cfg)
-        pruned_total = {"files": 0, "nodes": 0, "edges": 0}
-        if added:
-            roots = get_search_roots(search_roots)
-            repos = scan_repositories(roots)
-            v_touched = set()
-            for p in added:
-                for _name, r in repos.items():
-                    try:
-                        if r == p or os.path.commonpath([r, p]) == r:
-                            v_touched.add(r)
-                    except Exception:
-                        continue
-            for r in v_touched:
-                d = _FnPruneRepo(r)
-                for k in pruned_total:
-                    pruned_total[k] += d.get(k, 0)
-        return jsonify({"success": True, "excluded": added or [os.path.abspath(p) for p in paths],
-                        "pruned": pruned_total})
 
     @app.route("/api/project/init", methods=["POST"])
     def init_project():
@@ -486,8 +433,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         ok, out = execute_init(target_path)
         if ok:
-            return jsonify({"success": True, "output": out,
-                            "pruned": _FnPruneRepo(os.path.abspath(target_path))})
+            return jsonify({"success": True, "output": out})
         return jsonify({"success": False, "error": out}), 500
 
     @app.route("/api/project/uninit", methods=["POST"])
@@ -521,8 +467,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         ok, out = execute_reindex(target_path)
         if ok:
-            return jsonify({"success": True, "output": out,
-                            "pruned": _FnPruneRepo(os.path.abspath(target_path))})
+            return jsonify({"success": True, "output": out})
         return jsonify({"success": False, "error": out}), 500
 
     @app.route("/api/file/remove", methods=["POST"])

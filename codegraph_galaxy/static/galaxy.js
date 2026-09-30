@@ -452,9 +452,6 @@ const I18N = {
     act_uninit: 'Uninit',
     act_sync: 'Incremental Index',
     act_reindex: 'Full Rebuild',
-    act_exclude: 'Exclude',
-    confirm_exclude: 'Exclude [{name}] from discovery list?',
-    toast_exclude_done: 'Project excluded from list.',
     btn_close: 'Close',
     confirm_uninit: 'Are you sure you want to uninitialize [{name}]?\nThis will remove its .codegraph index database.',
     toast_path_copied: 'Path copied to clipboard.',
@@ -469,13 +466,12 @@ const I18N = {
     pending_sync_tip: 'Physical files on disk not indexed yet (Click to review & index)',
     dir_unindexed_tip: '{n} unindexed files inside (Click to review & index)',
     sync_modal_title: 'Incremental Indexing & File Review',
-    sync_modal_sub: 'Inspect unindexed physical files on disk. Inspect source code, batch index into CodeGraph, or exclude.',
+    sync_modal_sub: 'Inspect unindexed physical files on disk. Inspect source code, or batch index into CodeGraph.',
     sync_search_ph: '🔍 Filter file path or extension...',
     sync_sel_all: '✔ Select All',
     sync_sel_none: '✖ Clear',
     sync_sel_count: 'Selected {n} / {total}',
     sync_btn_sync: 'Index to CodeGraph',
-    sync_btn_exclude: 'Exclude Selected',
     sync_code_preview_tip: 'Select a file on the left to preview code',
     sync_code_empty_tip: 'Click any file in the list to view its source code',
     sync_no_unindexed: '🎉 All files in this project/directory are fully indexed!',
@@ -484,8 +480,6 @@ const I18N = {
     sync_loading: 'Loading source code...',
     sync_in_progress: 'CodeGraph indexing in progress...',
     sync_success_toast: '✅ {proj} indexing complete!',
-    sync_exclude_confirm: 'Exclude {n} selected files from indexing?',
-    sync_exclude_toast: '🚫 Excluded {n} files successfully!',
     sync_lines: '{n} lines'
   },
   'zh-TW': {
@@ -621,9 +615,6 @@ const I18N = {
     act_uninit: '退庫',
     act_sync: '增量建庫',
     act_reindex: '全量重建',
-    act_exclude: '排除',
-    confirm_exclude: '確定要將專案 [{name}] 從清單中排除嗎？',
-    toast_exclude_done: '已從清單中排除專案。',
     btn_close: '關閉',
     confirm_uninit: '確定要將專案 [{name}] 退庫嗎？\n此操作將移除其 .codegraph 索引資料庫。',
     toast_path_copied: '已複製檔案路徑。',
@@ -638,13 +629,12 @@ const I18N = {
     pending_sync_tip: '硬碟實體存在但尚未入庫至 CodeGraph 的檔案（點擊檢閱並建庫）',
     dir_unindexed_tip: '內含 {n} 個未建庫檔案（點擊檢閱並建庫）',
     sync_modal_title: '專案增量建庫與檔案檢閱',
-    sync_modal_sub: '檢視尚未納入 CodeGraph 知識庫之實體檔案。可逐一檢閱代碼、勾選批次建庫 (Index) 或排除。',
+    sync_modal_sub: '檢閱尚未納入 CodeGraph 的實體檔案，可逐檔檢閱原始碼或勾選批次建庫。',
     sync_search_ph: '🔍 搜尋過濾檔案路徑或副檔名...',
     sync_sel_all: '✔ 全選',
     sync_sel_none: '✖ 全不選',
     sync_sel_count: '已選 {n} / {total}',
     sync_btn_sync: '執行 CodeGraph 索引建庫',
-    sync_btn_exclude: '排除已選',
     sync_code_preview_tip: '請從左側點選檔案以預覽代碼',
     sync_code_empty_tip: '點擊左側檔案列表即可即時檢視代碼內容',
     sync_no_unindexed: '🎉 該專案/目錄之實體檔案已全數入庫！',
@@ -653,8 +643,6 @@ const I18N = {
     sync_loading: '載入原始碼中...',
     sync_in_progress: 'CodeGraph 索引建庫中...',
     sync_success_toast: '✅ {proj} 索引建庫完成！',
-    sync_exclude_confirm: '確定要將已選取的 {n} 個檔案加入排除清單（不再提示未入庫）嗎？',
-    sync_exclude_toast: '🚫 已成功排除 {n} 個檔案！',
     sync_lines: '{n} 行'
   }
 };
@@ -3043,7 +3031,6 @@ function loadManagerList() {
                 <button class="act-btn danger" onclick="uninitProject('${escapedPath}', '${p.name}')">${t('act_uninit')}</button>
               ` : `
                 <button class="act-btn green" onclick="initProject('${escapedPath}')">${t('act_init')}</button>
-                <button class="act-btn danger" onclick="excludeProject('${escapedPath}', '${p.name}')">${t('act_exclude')}</button>
               `}
             </div>
           </td>
@@ -3051,28 +3038,6 @@ function loadManagerList() {
         tbody.appendChild(tr);
       });
     });
-}
-
-function excludeProject(path, name) {
-  const confirmMsg = t('confirm_exclude', { name });
-  if (!confirm(confirmMsg)) return;
-
-  fetch('/api/project/exclude', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path })
-  })
-  .then(res => res.json())
-  .then(res => {
-    if (res.success) {
-      showToast(t('toast_exclude_done'));
-      selectedProjects.delete(name);
-      loadProjects();
-      loadManagerList();
-    } else {
-      alert('Failed to exclude project: ' + (res.error || ''));
-    }
-  });
 }
 
 function initProject(path) {
@@ -4539,8 +4504,6 @@ function updateSyncModalI18n() {
   if (selNoneEl) selNoneEl.textContent = t('sync_sel_none');
   const btnSyncEl = document.getElementById('lbl-btn-sync');
   if (btnSyncEl) btnSyncEl.textContent = t('sync_btn_sync');
-  const btnExcludeEl = document.getElementById('lbl-btn-exclude');
-  if (btnExcludeEl) btnExcludeEl.textContent = t('sync_btn_exclude');
   const emptyTipEl = document.getElementById('lbl-sync-code-empty');
   if (emptyTipEl) emptyTipEl.textContent = t('sync_code_empty_tip');
 }
@@ -4804,48 +4767,5 @@ window.executeSyncSelected = async function() {
     }
   }
 };
-
-window.executeExcludeSelected = async function() {
-  if (!currentSyncProject || selectedSyncFiles.size === 0) {
-    alert('Please select files to exclude.');
-    return;
-  }
-
-  const proj = (allProjectsList || []).find(p => p.name === currentSyncProject);
-  const projRoot = proj ? proj.path : '';
-  const pathsToExclude = Array.from(selectedSyncFiles).map(f => {
-    return projRoot ? normSlash(`${projRoot}/${f}`) : f;
-  });
-
-  if (!confirm(t('sync_exclude_confirm', { n: pathsToExclude.length }))) {
-    return;
-  }
-
-  const btn = document.getElementById('btnExcludeSelected');
-  if (btn) btn.disabled = true;
-
-  try {
-    const res = await fetch('/api/project/exclude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths: pathsToExclude })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(t('sync_exclude_toast', { n: pathsToExclude.length }));
-      window.closeSyncReviewModal();
-      const projRes = await fetch('/api/projects');
-      allProjectsList = await projRes.json();
-      loadRootGraph();
-    } else {
-      alert(`Exclude failed: ${data.error || 'Unknown error'}`);
-    }
-  } catch (err) {
-    alert(`Exclude error: ${err.message}`);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-};
-
 
 document.addEventListener('click', handleCodeReferenceClick);

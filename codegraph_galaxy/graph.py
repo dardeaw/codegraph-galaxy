@@ -171,39 +171,61 @@ def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
 
 def FnRemoveIndexedFile(db_path: str, repo_path: str,
                         rel_path: str) -> Dict[str, Any]:
-    """Direct physical management: delete one indexed file's rows.
+    """Delete one indexed file's rows (delegates to the batch version)."""
+    res = FnRemoveIndexedFiles(db_path, repo_path, [rel_path])
+    return {"files": res["files"], "nodes": res["nodes"],
+            "edges": res["edges"], "refs": res["refs"]}
 
-    Removes the file's nodes (FTS follows via nodes_ad trigger), attached
-    edges, its files-table record, its unresolved_refs, and orphaned
-    name_segment_vocab entries — all in one transaction. The file stays
-    on disk, so it reappears as unindexed (pending) until the next sync.
+
+def FnRemoveIndexedFiles(db_path: str, repo_path: str,
+                         rel_paths: List[str]) -> Dict[str, Any]:
+    """Batch kick-out in ONE transaction (one lock hold, one commit).
+
+    Removes each file's nodes (FTS follows via nodes_ad trigger), attached
+    edges, files-table record, and unresolved_refs, then cleans orphaned
+    name_segment_vocab entries. Files stay on disk and reappear as pending.
+    Returns totals plus per-file counts.
     """
-    norm_rel = (rel_path or "").replace("\\", "/").strip("/")
-    if not norm_rel or norm_rel == ".." or norm_rel.startswith("../"):
-        return {"files": 0, "nodes": 0, "edges": 0, "refs": 0}
-    n_files = n_nodes = n_edges = n_refs = 0
+    normed: List[str] = []
+    for r in rel_paths or []:
+        n = (r or "").replace("\\", "/").strip("/")
+        if n and n != ".." and not n.startswith("../") and n not in normed:
+            normed.append(n)
+    totals: Dict[str, Any] = {
+        "files": 0, "nodes": 0, "edges": 0, "refs": 0, "paths": []}
+    if not normed:
+        return totals
     try:
         conn = sqlite3.connect(db_path)
         try:
             cur = conn.cursor()
-            rows = cur.execute(
-                "SELECT id FROM nodes WHERE file_path = ?",
-                (norm_rel,)).fetchall()
-            v_ids = [r[0] for r in rows]
-            if v_ids:
-                ph = ",".join("?" * len(v_ids))
-                n_edges += cur.execute(
-                    f"DELETE FROM edges WHERE source IN ({ph}) OR target IN ({ph})",
-                    (*v_ids, *v_ids)).rowcount or 0
-                n_nodes += cur.execute(
-                    f"DELETE FROM nodes WHERE id IN ({ph})",
-                    (*v_ids,)).rowcount or 0
-            n_files += cur.execute(
-                "DELETE FROM files WHERE path = ?",
-                (norm_rel,)).rowcount or 0
-            n_refs += cur.execute(
-                "DELETE FROM unresolved_refs WHERE file_path = ?",
-                (norm_rel,)).rowcount or 0
+            for rel in normed:
+                rows = cur.execute(
+                    "SELECT id FROM nodes WHERE file_path = ?",
+                    (rel,)).fetchall()
+                v_ids = [x[0] for x in rows]
+                n_edges = n_nodes = 0
+                if v_ids:
+                    ph = ",".join("?" * len(v_ids))
+                    n_edges = cur.execute(
+                        f"DELETE FROM edges WHERE source IN ({ph}) OR target IN ({ph})",
+                        (*v_ids, *v_ids)).rowcount or 0
+                    n_nodes = cur.execute(
+                        f"DELETE FROM nodes WHERE id IN ({ph})",
+                        (*v_ids,)).rowcount or 0
+                n_files = cur.execute(
+                    "DELETE FROM files WHERE path = ?",
+                    (rel,)).rowcount or 0
+                n_refs = cur.execute(
+                    "DELETE FROM unresolved_refs WHERE file_path = ?",
+                    (rel,)).rowcount or 0
+                totals["files"] += n_files
+                totals["nodes"] += n_nodes
+                totals["edges"] += n_edges
+                totals["refs"] += n_refs
+                totals["paths"].append({
+                    "file_path": rel, "files": n_files, "nodes": n_nodes,
+                    "edges": n_edges, "refs": n_refs})
             try:
                 cur.execute(
                     "DELETE FROM name_segment_vocab WHERE name NOT IN "
@@ -214,9 +236,8 @@ def FnRemoveIndexedFile(db_path: str, repo_path: str,
         finally:
             conn.close()
     except Exception:
-        return {"files": 0, "nodes": 0, "edges": 0, "refs": 0}
-    return {"files": n_files, "nodes": n_nodes, "edges": n_edges,
-            "refs": n_refs}
+        return {"files": 0, "nodes": 0, "edges": 0, "refs": 0, "paths": []}
+    return totals
 
 
 def FnFileInfo(db_path: str, repo_path: str,

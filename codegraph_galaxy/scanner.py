@@ -20,11 +20,11 @@ def scan_disk_files(repo_path: str) -> Set[str]:
                 disk_files.add(rel)
     return disk_files
 
-def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str]]:
-    """Compute node count, edge count, and unindexed files for a repo."""
+def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], List[str]]:
+    """Node count, edge count, unindexed files, and indexed files for a repo."""
     db_path = get_db_path(repo_path)
     if not db_path:
-        return 0, 0, []
+        return 0, 0, [], []
     
     indexed_files: Set[str] = set()
     node_count = 0
@@ -44,7 +44,7 @@ def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str]]:
 
     disk_files = scan_disk_files(repo_path)
     unindexed = sorted(list(disk_files - indexed_files))
-    return node_count, edge_count, unindexed
+    return node_count, edge_count, unindexed, sorted(indexed_files)
 
 def scan_repositories(search_roots: List[str]) -> Dict[str, str]:
     """Scan search roots and return a dict of {project_name: abs_path}."""

@@ -6,7 +6,7 @@ from typing import Optional, List
 from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
-from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile, FnFileInfo
+from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile, FnRemoveIndexedFiles, FnFileInfo
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -82,7 +82,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         for name, p in sorted(repos.items()):
             db = get_db_path(p)
-            nodes, edges, unindexed = get_repo_metrics_and_delta(p) if db else (0, 0, [])
+            nodes, edges, unindexed, indexed = get_repo_metrics_and_delta(p) if db else (0, 0, [], [])
             projects.append({
                 "name": name,
                 "path": p,
@@ -91,6 +91,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                 "links": edges,
                 "edges": edges,
                 "unindexed_files": unindexed,
+                "indexed_files": indexed,
                 "pending_sync_count": len(unindexed)
             })
 
@@ -122,7 +123,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             if not db:
                 continue
 
-            _, _, unindexed = get_repo_metrics_and_delta(repo_path)
+            _, _, unindexed, _ = get_repo_metrics_and_delta(repo_path)
             if unindexed:
                 unindexed_by_project[proj_name] = unindexed
 
@@ -381,7 +382,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         def _metrics(repo):
             if not get_db_path(repo):
                 return {"nodes": 0, "edges": 0, "pending": 0}
-            n, e, u = get_repo_metrics_and_delta(repo)
+            n, e, u, _ = get_repo_metrics_and_delta(repo)
             return {"nodes": n, "edges": e, "pending": len(u)}
 
         if want:
@@ -499,6 +500,35 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                             "error": "Project not indexed"}), 400
         with _DB_WRITE_LOCK:
             removed = FnRemoveIndexedFile(db, repo_path, rel_path)
+        return jsonify({"success": True, "removed": removed})
+
+    @app.route("/api/files/remove", methods=["POST"])
+    def remove_indexed_files():
+        """Batch kick-out: delete many files' rows in ONE transaction.
+
+        Used by the indexing manager to reconcile unchecked files.
+        """
+        data = request.get_json(silent=True) or {}
+        project = (data.get("project") or "").strip()
+        rels = data.get("file_paths") or data.get("paths") or []
+        if not project or not isinstance(rels, list):
+            return jsonify({"success": False,
+                            "error": "project and file_paths required"}), 400
+        if len(rels) > 2000:
+            return jsonify({"success": False,
+                            "error": "Too many files (max 2000)"}), 400
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        repo_path = repos.get(project)
+        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False,
+                            "error": "Unknown project"}), 400
+        db = get_db_path(repo_path)
+        if not db:
+            return jsonify({"success": False,
+                            "error": "Project not indexed"}), 400
+        with _DB_WRITE_LOCK:
+            removed = FnRemoveIndexedFiles(db, repo_path, rels)
         return jsonify({"success": True, "removed": removed})
 
     @app.route("/api/file/info", methods=["GET"])

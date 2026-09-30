@@ -1594,7 +1594,7 @@ function buildProjectTree() {
       <span class="tree-arrow ${isProjOpen ? 'open' : ''}">▸</span>
       <input type="checkbox" ${isSelected ? 'checked' : ''} title="Toggle project inclusion" />
       <span style="font-weight:600; color:#58a6ff;">📦 ${projName}</span>
-      ${pendingCount > 0 ? `<span class="sync-delta-badge" title="${t('pending_sync_tip')}">⚡ ${pendingCount}</span>` : `<span class="sync-delta-badge" style="opacity:0.45;" title="${t('indexed_clean_tip')}">✓</span>`}
+      ${pendingCount > 0 ? `<span class="sync-delta-badge" title="${t('pending_sync_tip')}">⚡ ${pendingCount}</span>` : `<span class="sync-delta-badge" title="${t('indexed_clean_tip')}">⚡ 0</span>`}
       <span class="node-kind-tag" style="margin-left:${pendingCount > 0 ? '4px' : 'auto'};">${isSelected ? 'active' : 'off'}</span>
     `;
 
@@ -1719,7 +1719,7 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     dirNodeEl.innerHTML = `
       <span class="tree-arrow ${isDirOpen ? 'open' : ''}">▸</span>
       <span style="font-weight:500; color:#e6edf3;">📁 ${dName}</span>
-      ${unindexedCount > 0 ? `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('dir_unindexed_tip', { n: unindexedCount })}">⚡ ${unindexedCount}</span>` : `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto; opacity:0.45;" title="${t('indexed_clean_tip')}">✓</span>`}
+      ${unindexedCount > 0 ? `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('dir_unindexed_tip', { n: unindexedCount })}">⚡ ${unindexedCount}</span>` : `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('indexed_clean_tip')}">⚡ 0</span>`}
     `;
 
     const deltaBadgeEl = dirNodeEl.querySelector('.sync-delta-badge');

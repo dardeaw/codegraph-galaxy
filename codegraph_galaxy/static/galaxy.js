@@ -3459,15 +3459,30 @@ document.getElementById('btn-rotate').addEventListener('click', () => {
   isRotating = !isRotating;
   document.getElementById('btn-rotate').classList.toggle('highlight', isRotating);
   if (isRotating) {
-    let angle = 0;
-    const distance = 400;
+    // Orbit around the LIVE lookAt point (never yank it back to origin):
+    // angle/radius come from the current camera, so engaging rotation never
+    // teleports, and keyboard flight keeps working mid-rotation (both stay
+    // consistent — the old origin-yank is what skewed keys after rotating).
     window._rotateTimer = setInterval(() => {
-      if (!isRotating) { clearInterval(window._rotateTimer); return; }
-      angle += Math.PI / 600;
-      Graph.cameraPosition({
-        x: distance * Math.sin(angle),
-        z: distance * Math.cos(angle)
-      });
+      if (!isRotating || typeof Graph === 'undefined' || !Graph || !Graph.cameraPosition) { clearInterval(window._rotateTimer); return; }
+      try {
+        const pos = Graph.cameraPosition();
+        let cx = 0, cy = 0, cz = 0;
+        try {
+          const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+          if (ctrl && ctrl.target && isFinite(ctrl.target.x)) {
+            cx = ctrl.target.x; cy = ctrl.target.y; cz = ctrl.target.z;
+          }
+        } catch (e) { /* keep origin fallback */ }
+        const dx = (pos.x || 0) - cx, dz = (pos.z || 0) - cz;
+        const radius = Math.sqrt(dx * dx + dz * dz) || 400;
+        const angle = Math.atan2(dx, dz) + Math.PI / 600;
+        Graph.cameraPosition({
+          x: cx + radius * Math.sin(angle),
+          y: (pos.y !== undefined ? pos.y : cy),
+          z: cz + radius * Math.cos(angle)
+        }, { x: cx, y: cy, z: cz });
+      } catch (e) { /* never break the loop on a bad frame */ }
     }, 20);
   } else {
     clearInterval(window._rotateTimer);

@@ -11,10 +11,14 @@ def fetch_project_graph(
     db_path: str,
     proj_name: str,
     repo_path: str,
-    lod: str = "standard",
     parent_id: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Fetch nodes and links for a given repository database according to LOD settings."""
+    """Fetch all nodes and links for a repository database.
+
+    Layering lives frontend-only now (hiddenKinds + tempRevealed): the
+    backend always serves the full node set so walk-up reveal works in
+    every MODE. Old lod-based SQL filters deleted.
+    """
     nodes: List[Dict[str, Any]] = []
     links: List[Dict[str, Any]] = []
 
@@ -40,13 +44,8 @@ def fetch_project_graph(
                     WHERE id = ? OR file_path = ?
                 """, (parent_id, parent_id))
             nodes_rows = cur.fetchall()
-        elif lod == "arch":
-            cur.execute("SELECT * FROM nodes WHERE kind IN ('file', 'class', 'interface', 'namespace')")
-            nodes_rows = cur.fetchall()
-        elif lod == "standard":
-            cur.execute("SELECT * FROM nodes WHERE kind IN ('file', 'class', 'interface', 'function', 'method', 'route')")
-            nodes_rows = cur.fetchall()
         else:
+            # Full set, every kind: frontend hiddenKinds does the layering.
             cur.execute("SELECT * FROM nodes")
             nodes_rows = cur.fetchall()
 

@@ -104,7 +104,8 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
     @app.route("/api/graph")
     def get_graph():
         proj_param = request.args.get("projects", "")
-        lod = request.args.get("lod", "standard")
+        # lod accepted for compat but ignored: layering is frontend-only,
+        # the backend always serves the full node set (walk-up reveal).
         parent_id = request.args.get("parent_id", None)
 
         if not proj_param:
@@ -131,7 +132,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             if unindexed:
                 unindexed_by_project[proj_name] = unindexed
 
-            nodes, links = fetch_project_graph(db, proj_name, repo_path, lod=lod, parent_id=parent_id)
+            nodes, links = fetch_project_graph(db, proj_name, repo_path, parent_id=parent_id)
             all_nodes.extend(nodes)
             all_links.extend(links)
 

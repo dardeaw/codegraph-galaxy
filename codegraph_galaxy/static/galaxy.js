@@ -3135,8 +3135,9 @@ function loadRootGraph(isSilent = false) {
   }
 
   const projParam = Array.from(selectedProjects).join(',');
-  const backendLOD = (currentLOD === 'custom' || currentLOD === 'all') ? 'all' : currentLOD;
-  fetch(`/api/graph?projects=${encodeURIComponent(projParam)}&lod=${backendLOD}`)
+  // Layering is frontend-only (hiddenKinds + tempRevealed): always fetch
+  // the full set so walk-up reveal works in every MODE.
+  fetch(`/api/graph?projects=${encodeURIComponent(projParam)}&lod=all`)
     .then(res => res.json())
     .then(data => {
       const nodes = data.nodes || [];

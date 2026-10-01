@@ -1086,6 +1086,7 @@ function layoutGraphViewport() {
 // Keyboard flight (WASD/arrows + QE, Shift boost; CyberControl-style feel)
 // ==========================================
 const flightKeys = new Set();
+let lastFlightRight = { x: 1, y: 0, z: 0 }; // pole fallback, see flightStep
 
 function flightIsTyping() {
   const el = document.activeElement;
@@ -1138,18 +1139,36 @@ function flightStep() {
   const fwd = { x: tgt.x - pos.x, y: tgt.y - pos.y, z: tgt.z - pos.z };
   const dist = Math.sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z) || 1;
   fwd.x /= dist; fwd.y /= dist; fwd.z /= dist;
-  const up = { x: 0, y: 1, z: 0 };
-  const right = {
-    x: fwd.y * up.z - fwd.z * up.y,
-    y: fwd.z * up.x - fwd.x * up.z,
-    z: fwd.x * up.y - fwd.y * up.x,
+  // Camera-relative basis (no-roll orbit): right is exact screen-right at
+  // any yaw/pitch once normalized — the old unnormalized cross product
+  // shrank with pitch (0.7x at 45 deg, ~0 looking straight down, so A/D
+  // died). Degenerate pole reuses the last good right.
+  const worldUp = { x: 0, y: 1, z: 0 };
+  let right = {
+    x: fwd.y * worldUp.z - fwd.z * worldUp.y,
+    y: fwd.z * worldUp.x - fwd.x * worldUp.z,
+    z: fwd.x * worldUp.y - fwd.y * worldUp.x,
   };
+  const rl = Math.sqrt(right.x * right.x + right.y * right.y + right.z * right.z);
+  if (rl > 1e-4) {
+    right.x /= rl; right.y /= rl; right.z /= rl;
+    lastFlightRight = { x: right.x, y: right.y, z: right.z };
+  } else {
+    right = { x: lastFlightRight.x, y: lastFlightRight.y, z: lastFlightRight.z };
+  }
+  // Lift follows screen-up (worldUp minus its view-direction part), so Q/E
+  // moves content vertically on screen at any pitch — not world-Y.
+  const along = fwd.x * worldUp.x + fwd.y * worldUp.y + fwd.z * worldUp.z;
+  let up = { x: worldUp.x - fwd.x * along, y: worldUp.y - fwd.y * along, z: worldUp.z - fwd.z * along };
+  const ul = Math.sqrt(up.x * up.x + up.y * up.y + up.z * up.z);
+  if (ul > 1e-4) { up.x /= ul; up.y /= ul; up.z /= ul; }
+  else { up = { x: worldUp.x, y: worldUp.y, z: worldUp.z }; }
   const speed = dist * 0.02 * (flightKeys.has('shift') ? 3.5 : 1);
   const o = flightOffset(fwd, right, up, flightKeys, speed);
   if (!o.x && !o.y && !o.z) return false;
   const newPos = { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z };
   const newLook = { x: tgt.x + o.x, y: tgt.y + o.y, z: tgt.z + o.z };
-  // lookAt follows: pure translation, no tilt (this is what makes Q/E truly vertical)
+  // lookAt follows: pure translation, no tilt (Q/E is screen-up, A/D screen-right)
   Graph.cameraPosition(newPos, newLook);
   try {
     const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;

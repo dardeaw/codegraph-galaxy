@@ -290,6 +290,13 @@
             <button onclick="openSyncFileInIDE('vscode')" style="padding: 4px 10px; background: #21262d; border: 1px solid #30363d; color: #58a6ff; border-radius: 4px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;"><span>💻</span> VSCode</button>
             <button onclick="openSyncFileInIDE('antigravity')" style="padding: 4px 10px; background: #21262d; border: 1px solid #30363d; color: #bc8cff; border-radius: 4px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;"><span>🚀</span> Antigravity</button>
           </div>
+          <div id="syncVcsChoice" style="display:none; margin:6px 0 2px; padding:8px 10px; border:1px solid #30363d; border-radius:6px; background:#161b22;">
+            <div id="lbl-sync-vcs-text" style="font-size:0.75rem; color:#c9d1d9; margin-bottom:8px;"></div>
+            <div style="display:flex; gap:8px;">
+              <button id="syncVcsUnignore" class="act-btn" style="flex:1;"></button>
+              <button id="syncVcsForce" class="act-btn green" style="flex:1;"></button>
+            </div>
+          </div>
         </div>
 
         <!-- Code Content Area -->
@@ -352,6 +359,13 @@
             <span id="syncCodeStats" style="color: #8b949e; font-size: 0.75rem; margin-right: 4px;"></span>
             <button onclick="openSyncFileInIDE('vscode')" style="padding: 4px 10px; background: #21262d; border: 1px solid #30363d; color: #58a6ff; border-radius: 4px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;"><span>💻</span> VSCode</button>
             <button onclick="openSyncFileInIDE('antigravity')" style="padding: 4px 10px; background: #21262d; border: 1px solid #30363d; color: #bc8cff; border-radius: 4px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; gap: 4px;"><span>🚀</span> Antigravity</button>
+          </div>
+          <div id="syncVcsChoice" style="display:none; margin:6px 0 2px; padding:8px 10px; border:1px solid #30363d; border-radius:6px; background:#161b22;">
+            <div id="lbl-sync-vcs-text" style="font-size:0.75rem; color:#c9d1d9; margin-bottom:8px;"></div>
+            <div style="display:flex; gap:8px;">
+              <button id="syncVcsUnignore" class="act-btn" style="flex:1;"></button>
+              <button id="syncVcsForce" class="act-btn green" style="flex:1;"></button>
+            </div>
           </div>
         </div>
 

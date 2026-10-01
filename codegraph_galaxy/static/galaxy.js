@@ -476,6 +476,12 @@ const I18N = {
     sync_status_ignored: 'Ignored',
     sync_status_gitignored: 'Git-ignored',
     sync_status_forced: 'Forced in',
+    sync_vcs_choice_text: 'Blocked by .gitignore. Un-ignore edits version control (file becomes committable); Force only affects the index (git never knows).',
+    sync_vcs_unignore: 'Un-ignore (.gitignore)',
+    sync_vcs_force: 'Force index (git untouched)',
+    sync_vcs_unignore_confirm: 'Append !{n} to .gitignore? The file becomes committable.',
+    sync_vcs_unignored: '✓ {n} un-ignored — now checkable.',
+    sync_vcs_still_blocked: '⚠ {n} still blocked by {s} — parent dir or another source; fix by hand.',
     gitignored_tip: 'Blocked by .gitignore — checking it forces indexing via an include rule',
     sync_apply_confirm: 'Sync index state?\nIndex {i} files, remove {r} files from the index.',
     sync_apply_toast: '⚡ Synced: +{added} nodes, {resolved} resolved, −{rfiles} files ({rnodes} nodes), {u} unignored.',
@@ -658,6 +664,12 @@ const I18N = {
     sync_status_ignored: '規則忽略',
     sync_status_gitignored: 'Git 忽略',
     sync_status_forced: '強制入庫',
+    sync_vcs_choice_text: '被 .gitignore 擋住。解 Ignore 會改版控（檔案變成可提交）；強制入庫只動索引（git 完全不知情）。',
+    sync_vcs_unignore: '解 Ignore（改 .gitignore）',
+    sync_vcs_force: '強制入庫（不動 git）',
+    sync_vcs_unignore_confirm: '要在 .gitignore 加 !{n} 嗎？檔案會變成可提交。',
+    sync_vcs_unignored: '✓ {n} 已解 ignore——可以勾選了。',
+    sync_vcs_still_blocked: '⚠ {n} 還是被 {s} 擋住——可能是父目錄或別處規則，請手動處理。',
     gitignored_tip: '被 .gitignore 擋掉——勾選會用 include 規則強制入庫',
     rule_save_failed: '忽略規則沒存上——同步後可能回來：{e}',
     sync_apply_confirm: '確定同步入庫狀態？\n入庫 {i} 個檔案，從索引踢出 {r} 個檔案。',
@@ -4591,11 +4603,19 @@ function buildSyncFileState(proj) {
   const idxSet = new Set(idx.map(f => normSlash(f)));
   const notIdx = (f) => !idxSet.has(normSlash(f));
   const forcedSet = new Set(((proj && proj.vcs_forced) || []).map(f => normSlash(f)));
+  // Backend lists are disjoint, but never render one path twice (first wins).
+  const seen = new Set(idxSet);
+  const uniq = (list) => list.filter(f => {
+    const k = normSlash(f);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
   const all = [
     ...idx.map(f => ({ path: f, indexed: true, ignored: false, vcsIgnored: false, forced: forcedSet.has(normSlash(f)) })),
-    ...fr.filter(notIdx).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: false })),
-    ...ig.filter(notIdx).map(f => ({ path: f, indexed: false, ignored: true, vcsIgnored: false })),
-    ...vc.filter(notIdx).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: true }))
+    ...uniq(fr.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: false })),
+    ...uniq(ig.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: true, vcsIgnored: false })),
+    ...uniq(vc.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: true }))
   ];
   all.sort((a, b) => a.path.localeCompare(b.path));
   currentSyncFiles = all;
@@ -4840,6 +4860,28 @@ window.selectSyncFileForPreview = async function(filePath) {
     badgeEl.textContent = (ent && ent.forced) ? t('sync_status_forced') : (ent && ent.indexed) ? t('sync_status_indexed') : (ent && ent.ignored) ? t('sync_status_ignored') : (ent && ent.vcsIgnored) ? t('sync_status_gitignored') : t('sync_status_unindexed');
   }
   if (actionsEl) actionsEl.style.display = 'flex';
+  // VCS choice: git-blocked files get two honest doors (un-ignore edits
+  // version control; force touches only the index). Hidden otherwise.
+  const vcsChoice = document.getElementById('syncVcsChoice');
+  const vcsEnt = (currentSyncFiles || []).find(e => e.path === filePath);
+  const showChoice = !!(vcsEnt && vcsEnt.vcsIgnored && !vcsEnt.indexed);
+  if (vcsChoice) {
+    vcsChoice.style.display = showChoice ? 'block' : 'none';
+    if (showChoice) {
+      const lbl = document.getElementById('lbl-sync-vcs-text');
+      if (lbl) lbl.textContent = t('sync_vcs_choice_text');
+      const bU = document.getElementById('syncVcsUnignore');
+      if (bU) {
+        bU.textContent = t('sync_vcs_unignore');
+        bU.onclick = () => unignoreVcsFile(currentSyncProject, filePath);
+      }
+      const bF = document.getElementById('syncVcsForce');
+      if (bF) {
+        bF.textContent = t('sync_vcs_force');
+        bF.onclick = () => forceIndexVcsFile(currentSyncProject, filePath);
+      }
+    }
+  }
   if (contentEl) {
     contentEl.innerHTML = `<div style="color: #8b949e; padding: 20px;">${t('sync_loading')}</div>`;
   }
@@ -5013,6 +5055,41 @@ async function reloadSyncFileList() {
     resetSyncCodeViewer();
   }
 }
+
+window.unignoreVcsFile = async function(project, filePath) {
+  if (!project || !filePath) return;
+  if (!confirm(t('sync_vcs_unignore_confirm', { n: filePath }))) return;
+  try {
+    const res = await fetch('/api/project/gitignore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, unignore: [filePath] })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert(t('index_failed', { e: data.error || '' }));
+      return;
+    }
+    const blocked = data.still_blocked || [];
+    if (blocked.length > 0) {
+      alert(t('sync_vcs_still_blocked', { n: filePath, s: blocked[0].source || '' }));
+      return;
+    }
+    showToast(t('sync_vcs_unignored', { n: filePath }));
+    await reloadSyncFileList();
+    selectedSyncFiles.add(filePath);
+    window.renderSyncFileList();
+  } catch (err) {
+    alert(t('index_failed', { e: err.message }));
+  }
+};
+
+window.forceIndexVcsFile = async function(project, filePath) {
+  if (!project || !filePath) return;
+  selectedSyncFiles.add(filePath);
+  window.renderSyncFileList();
+  await window.applyIndexing();
+};
 
 // Indexing manager apply: rules first (official gate + instant kick),
 // then scoped sync (CLI skips ruled files natively, indexes the rest).

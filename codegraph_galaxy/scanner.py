@@ -3,6 +3,7 @@ import os
 import sqlite3
 from typing import Dict, List, Optional, Set, Tuple
 from .constants import IGNORE_DIRS, SRC_EXTS, DOC_EXTS
+from .exclusions import FnReadExcludes, FnIsExcluded
 
 def get_db_path(repo_path: str) -> Optional[str]:
     """Return SQLite database path for a CodeGraph repository if present."""
@@ -20,11 +21,11 @@ def scan_disk_files(repo_path: str) -> Set[str]:
                 disk_files.add(rel)
     return disk_files
 
-def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], List[str]]:
-    """Node count, edge count, unindexed files, and indexed files for a repo."""
+def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], List[str], List[str]]:
+    """Node count, edge count, unindexed, indexed, and rule-ignored files."""
     db_path = get_db_path(repo_path)
     if not db_path:
-        return 0, 0, [], []
+        return 0, 0, [], [], []
     
     indexed_files: Set[str] = set()
     node_count = 0
@@ -45,10 +46,18 @@ def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], Lis
     disk_files = scan_disk_files(repo_path)
     # Doc citizens (.md/.json/.html) live beside the graph, never as pending:
     # the CLI has no grammar for them, so nagging "index me" is a lie.
-    unindexed = sorted(
+    # Rule-ignored files (codegraph.json exclude) are classified separately:
+    # intentionally out, shown as ignored — never nagged, never resurrected.
+    try:
+        v_rules = FnReadExcludes(repo_path)
+    except Exception:
+        v_rules = []
+    pending = sorted(
         f for f in (disk_files - indexed_files)
-        if not f.lower().endswith(DOC_EXTS))
-    return node_count, edge_count, unindexed, sorted(indexed_files)
+        if not f.lower().endswith(DOC_EXTS) and not FnIsExcluded(f, v_rules))
+    ignored = sorted(
+        f for f in (disk_files - indexed_files) if FnIsExcluded(f, v_rules))
+    return node_count, edge_count, pending, sorted(indexed_files), ignored
 
 def scan_repositories(search_roots: List[str]) -> Dict[str, str]:
     """Scan search roots and return a dict of {project_name: abs_path}."""

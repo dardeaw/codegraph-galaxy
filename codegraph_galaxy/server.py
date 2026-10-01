@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile, FnRemoveIndexedFiles, FnFileInfo
+from .exclusions import FnReadExcludes, FnWriteExcludes
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -82,7 +83,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         for name, p in sorted(repos.items()):
             db = get_db_path(p)
-            nodes, edges, unindexed, indexed = get_repo_metrics_and_delta(p) if db else (0, 0, [], [])
+            nodes, edges, unindexed, indexed, ignored = get_repo_metrics_and_delta(p) if db else (0, 0, [], [], [])
             projects.append({
                 "name": name,
                 "path": p,
@@ -92,6 +93,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                 "edges": edges,
                 "unindexed_files": unindexed,
                 "indexed_files": indexed,
+                "rule_ignored": ignored,
                 "pending_sync_count": len(unindexed)
             })
 
@@ -123,7 +125,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             if not db:
                 continue
 
-            _, _, unindexed, _ = get_repo_metrics_and_delta(repo_path)
+            _, _, unindexed, _, _ = get_repo_metrics_and_delta(repo_path)
             if unindexed:
                 unindexed_by_project[proj_name] = unindexed
 
@@ -382,7 +384,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         def _metrics(repo):
             if not get_db_path(repo):
                 return {"nodes": 0, "edges": 0, "pending": 0}
-            n, e, u, _ = get_repo_metrics_and_delta(repo)
+            n, e, u, _, _ = get_repo_metrics_and_delta(repo)
             return {"nodes": n, "edges": e, "pending": len(u)}
 
         if want:
@@ -498,13 +500,23 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         if not db:
             return jsonify({"success": False,
                             "error": "Project not indexed"}), 400
+        rule_error = None
         with _DB_WRITE_LOCK:
             try:
                 removed = FnRemoveIndexedFile(db, repo_path, rel_path)
             except Exception as ex:
                 return jsonify({"success": False,
                                 "error": "Remove failed: %s" % ex}), 500
-        return jsonify({"success": True, "removed": removed})
+            # Kick-out means stay-out: persist the official CLI gate so no
+            # future sync (scoped or global) resurrects this file.
+            try:
+                FnWriteExcludes(repo_path, [rel_path], [])
+            except Exception as ex:
+                rule_error = "Rule not saved: %s" % ex
+        out = {"success": True, "removed": removed}
+        if rule_error:
+            out["rule_error"] = rule_error
+        return jsonify(out)
 
     @app.route("/api/files/remove", methods=["POST"])
     def remove_indexed_files():
@@ -531,13 +543,88 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         if not db:
             return jsonify({"success": False,
                             "error": "Project not indexed"}), 400
+        rule_error = None
         with _DB_WRITE_LOCK:
             try:
                 removed = FnRemoveIndexedFiles(db, repo_path, rels)
             except Exception as ex:
                 return jsonify({"success": False,
                                 "error": "Remove failed: %s" % ex}), 500
-        return jsonify({"success": True, "removed": removed})
+            try:
+                FnWriteExcludes(repo_path, rels, [])
+            except Exception as ex:
+                rule_error = "Rules not saved: %s" % ex
+        out = {"success": True, "removed": removed}
+        if rule_error:
+            out["rule_error"] = rule_error
+        return jsonify(out)
+
+    @app.route("/api/project/exclusions", methods=["GET"])
+    def get_exclusions():
+        """Read the repo's codegraph.json exclude rules (official gate)."""
+        project = (request.args.get("project") or "").strip()
+        if not project:
+            return jsonify({"success": False,
+                            "error": "project required"}), 400
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        repo_path = repos.get(project)
+        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False,
+                            "error": "Unknown project"}), 400
+        try:
+            patterns = FnReadExcludes(repo_path)
+        except Exception as ex:
+            return jsonify({"success": False,
+                            "error": "codegraph.json unreadable: %s" % ex}), 500
+        return jsonify({"success": True, "project": project,
+                        "patterns": patterns})
+
+    @app.route("/api/project/exclusions", methods=["POST"])
+    def set_exclusions():
+        """Merge add/remove into codegraph.json AND kick added from DB now.
+
+        The rule stops all future syncs from resurrecting; the kick makes
+        the balls vanish immediately. One lock, one round trip.
+        """
+        data = request.get_json(silent=True) or {}
+        project = (data.get("project") or "").strip()
+        v_add = data.get("add") or []
+        v_rem = data.get("remove") or []
+        if not project or not isinstance(v_add, list) \
+                or not isinstance(v_rem, list):
+            return jsonify({"success": False,
+                            "error": "project, add[], remove[] required"}), 400
+        if len(v_add) + len(v_rem) > 2000:
+            return jsonify({"success": False,
+                            "error": "Too many patterns (max 2000)"}), 400
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        repo_path = repos.get(project)
+        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False,
+                            "error": "Unknown project"}), 400
+        with _DB_WRITE_LOCK:
+            try:
+                patterns, _ = FnWriteExcludes(repo_path, v_add, v_rem)
+            except json.JSONDecodeError as ex:
+                return jsonify({"success": False,
+                                "error": "codegraph.json corrupt, fix by hand: %s" % ex}), 500
+            except ValueError as ex:
+                return jsonify({"success": False,
+                                "error": str(ex)}), 400
+            kicked = {"files": 0, "nodes": 0, "edges": 0, "refs": 0,
+                      "paths": []}
+            db = get_db_path(repo_path)
+            if db and v_add:
+                try:
+                    kicked = FnRemoveIndexedFiles(db, repo_path, v_add)
+                except Exception as ex:
+                    return jsonify({"success": False,
+                                    "error": "Rules saved but kick failed: %s. "
+                                    "Sync will still skip these files." % ex}), 500
+        return jsonify({"success": True, "project": project,
+                        "patterns": patterns, "kicked": kicked})
 
     @app.route("/api/file/info", methods=["GET"])
     def file_info():

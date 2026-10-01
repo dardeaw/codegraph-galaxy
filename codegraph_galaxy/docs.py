@@ -8,6 +8,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from .constants import DOC_EXTS
+from .exclusions import CONFIG_NAME
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _SKIP_DIRS = {".git", ".codegraph", ".docgraph", "node_modules", "__pycache__",
@@ -33,6 +34,8 @@ def FnListDocs(str_repo: str, n_max: int = MAX_FILES) -> List[Dict[str, Any]]:
     for dp, dn, fn in os.walk(abs_repo):
         dn[:] = sorted(d for d in dn if d not in _SKIP_DIRS and not d.startswith("."))
         for f in sorted(fn):
+            if f == CONFIG_NAME:
+                continue  # our own managed gate file, not a doc citizen
             if not f.lower().endswith(DOC_EXTS):
                 continue
             full = os.path.join(dp, f)

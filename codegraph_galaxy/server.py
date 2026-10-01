@@ -7,7 +7,7 @@ from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile, FnRemoveIndexedFiles, FnFileInfo
-from .exclusions import FnReadExcludes, FnWriteExcludes, FnWriteIncludes
+from .exclusions import FnReadExcludes, FnWriteExcludes, FnWriteIncludes, FnUnignoreGitignore
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -649,6 +649,45 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                                     "error": "Includes saved but kick failed: %s." % ex}), 500
         return jsonify({"success": True, "project": project,
                         "includes": includes, "kicked": kicked})
+
+    @app.route("/api/project/gitignore", methods=["POST"])
+    def set_gitignore():
+        """Manual un-ignore: append !negations to the repo's .gitignore.
+
+        The OTHER door from the include gate: the file becomes committable
+        (version-control consequence, user's explicit choice). Every path
+        is verified; failures roll back and report their blocking source.
+        """
+        data = request.get_json(silent=True) or {}
+        project = (data.get("project") or "").strip()
+        v_paths = data.get("unignore") or []
+        if not project or not isinstance(v_paths, list):
+            return jsonify({"success": False,
+                            "error": "project and unignore[] required"}), 400
+        if len(v_paths) > 200:
+            return jsonify({"success": False,
+                            "error": "Too many paths (max 200)"}), 400
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        repo_path = repos.get(project)
+        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False,
+                            "error": "Unknown project"}), 400
+        if not os.path.isdir(os.path.join(os.path.abspath(repo_path),
+                                           ".git")):
+            return jsonify({"success": False,
+                            "error": "Not a git repository"}), 400
+        with _DB_WRITE_LOCK:
+            try:
+                v_ok, v_bad = FnUnignoreGitignore(repo_path, v_paths)
+            except ValueError as ex:
+                return jsonify({"success": False,
+                                "error": str(ex)}), 400
+            except (RuntimeError, OSError) as ex:
+                return jsonify({"success": False,
+                                "error": "git failed: %s" % ex}), 500
+        return jsonify({"success": True, "project": project,
+                        "unignored": v_ok, "still_blocked": v_bad})
 
     @app.route("/api/file/info", methods=["GET"])
     def file_info():

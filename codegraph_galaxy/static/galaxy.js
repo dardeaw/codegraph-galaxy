@@ -464,13 +464,17 @@ const I18N = {
     toast_input_path: 'Please enter a valid directory path.',
     tree_filter_ph: 'Filter explorer...',
     sync_modal_title: 'Indexing Manager',
-    sync_modal_sub: 'All source files. Checked = in index. Sync indexes new checks and removes unchecks.',
+    sync_modal_sub: 'Pick a target per file: Indexed, Pending, or Ignored. Apply reconciles.',
     sync_search_ph: '🔍 Filter file path or extension...',
     sync_sel_all: '✔ Select All',
     sync_sel_none: '✖ Clear',
-    sync_diff_count: 'Sync: index {i} · remove {r} · unignore {u} ({total} files)',
     sync_status_indexed: 'Indexed',
     sync_status_ignored: 'Ignored',
+    seg_indexed: 'Indexed',
+    seg_pending: 'Unindexed',
+    seg_ignored: 'Ignored',
+    seg_pick_tip: 'Pick target state for this file',
+    sync_desired_diff: 'Index {i} · Remove {m} · Mute {k} ({total} files)',
     indexed_count_tip: '{n} files indexed — click to open indexing manager',
     sync_badge_toggle_tip: 'Click to mute / unmute',
     sync_vcs_choice_text: 'Blocked by .gitignore. Un-ignore edits version control (file becomes committable); Force only affects the index (git never knows).',
@@ -480,8 +484,8 @@ const I18N = {
     sync_vcs_unignored: '✓ {n} un-ignored — now checkable.',
     sync_vcs_still_blocked: '⚠ {n} still blocked by {s} — parent dir or another source; fix by hand.',
     gitignored_tip: 'Blocked by .gitignore — checking it forces indexing via an include rule',
-    sync_apply_confirm: 'Sync index state?\nIndex {i} files, remove {r} files from the index.',
-    sync_apply_toast: '⚡ Synced: +{added} nodes, {resolved} resolved, −{rfiles} files ({rnodes} nodes), {u} unignored.',
+    sync_apply_confirm: 'Apply?\nIndex {i} files, remove {m} from the index, mute {k}.',
+    sync_apply_toast: '⚡ Applied: +{added} nodes ({resolved} resolved), −{rfiles} files, {k} muted.',
     rule_save_failed: 'Ignore rule NOT saved — file may return after sync: {e}',
     toast_kicked_out: '🗑 {n} removed from index ({nodes} nodes, {edges} edges) + ignore rule saved.',
     sync_nothing_to_do: 'Already in sync — checks match the index.',
@@ -649,13 +653,17 @@ const I18N = {
     toast_input_path: '請輸入有效的目錄路徑。',
     tree_filter_ph: '過濾檔案與符號...',
     sync_modal_title: '入庫總管',
-    sync_modal_sub: '全部原始檔。勾選＝在庫裡；同步＝入庫新勾、踢掉取消勾。',
+    sync_modal_sub: '逐檔選目標：入庫、待辦或靜音，套用後對帳。',
     sync_search_ph: '🔍 搜尋過濾檔案路徑或副檔名...',
     sync_sel_all: '✔ 全選',
     sync_sel_none: '✖ 全不選',
-    sync_diff_count: '同步：入庫 {i} ・ 踢出 {r} ・ 取消忽略 {u}（共 {total} 檔）',
     sync_status_indexed: '已入庫',
     sync_status_ignored: '規則忽略',
+    seg_indexed: '入庫',
+    seg_pending: '待辦',
+    seg_ignored: '靜音',
+    seg_pick_tip: '為此檔選擇目標狀態',
+    sync_desired_diff: '入庫 {i} ・ 移出 {m} ・ 靜音 {k}（共 {total} 檔）',
     indexed_count_tip: '已入庫 {n} 個檔案——點擊開啟入庫總管',
     sync_badge_toggle_tip: '點擊靜音／取消靜音',
     sync_vcs_choice_text: '被 .gitignore 擋住。解 Ignore 會改版控（檔案變成可提交）；強制入庫只動索引（git 完全不知情）。',
@@ -666,8 +674,8 @@ const I18N = {
     sync_vcs_still_blocked: '⚠ {n} 還是被 {s} 擋住——可能是父目錄或別處規則，請手動處理。',
     gitignored_tip: '被 .gitignore 擋掉——勾選會用 include 規則強制入庫',
     rule_save_failed: '忽略規則沒存上——同步後可能回來：{e}',
-    sync_apply_confirm: '確定同步入庫狀態？\n入庫 {i} 個檔案，從索引踢出 {r} 個檔案。',
-    sync_apply_toast: '⚡ 已同步：＋{added} 節點，解決 {resolved} 個待入庫，踢出 {rfiles} 檔（{rnodes} 節點），取消忽略 {u} 個。',
+    sync_apply_confirm: '確定套用？\n入庫 {i} 個，移出 {m} 個，靜音 {k} 個。',
+    sync_apply_toast: '⚡ 已套用：＋{added} 節點（解決 {resolved} 個），移出 {rfiles} 檔，靜音 {k} 個。',
     sync_nothing_to_do: '勾選與索引一致，無需同步。',
     sync_btn_sync: '同步入庫狀態',
     sync_code_preview_tip: '請從左側點選檔案以預覽代碼',
@@ -876,6 +884,8 @@ async function toggleMute(project, filePath, known) {
         if (!data.success) { alert(t('index_failed', { e: data.error || '' })); return; }
       }
       setMuted(project, filePath, true);
+      syncDesired.set(filePath, 'ignored');
+      selectedSyncFiles.delete(filePath);
     } else {
       const res = await fetch('/api/project/exclusions', {
         method: 'POST',
@@ -885,6 +895,7 @@ async function toggleMute(project, filePath, known) {
       const data = await res.json();
       if (!data.success) { alert(t('index_failed', { e: data.error || '' })); return; }
       setMuted(project, filePath, false);
+      syncDesired.set(filePath, 'unindexed');
     }
     await refreshAfterIndexChange();
     const modalEl = document.getElementById('syncReviewModal');
@@ -1718,11 +1729,11 @@ function buildProjectTree() {
       <span class="tree-arrow ${isProjOpen ? 'open' : ''}">▸</span>
       <input type="checkbox" ${isSelected ? 'checked' : ''} title="Toggle project inclusion" />
       <span style="font-weight:600; color:#58a6ff;">📦 ${projName}</span>
-      <span class="mgr-entry-badge" title="${t('indexed_count_tip', { n: indexedCount })}">${indexedCount}</span>
+      <span class="sync-delta-badge" title="${t('indexed_count_tip', { n: indexedCount })}">⚡ ${indexedCount}</span>
       <span class="node-kind-tag" style="margin-left:4px;">${isSelected ? 'active' : 'off'}</span>
     `;
 
-    const mgrBadgeEl = projNodeEl.querySelector('.mgr-entry-badge');
+    const mgrBadgeEl = projNodeEl.querySelector('.sync-delta-badge');
     if (mgrBadgeEl) {
       mgrBadgeEl.onclick = (e) => {
         e.stopPropagation();
@@ -1843,10 +1854,10 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     dirNodeEl.innerHTML = `
       <span class="tree-arrow ${isDirOpen ? 'open' : ''}">▸</span>
       <span style="font-weight:500; color:#e6edf3;">📁 ${dName}</span>
-      <span class="mgr-entry-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('indexed_count_tip', { n: indexedCount })}">${indexedCount}</span>
+      <span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('indexed_count_tip', { n: indexedCount })}">⚡ ${indexedCount}</span>
     `;
 
-    const deltaBadgeEl = dirNodeEl.querySelector('.mgr-entry-badge');
+    const deltaBadgeEl = dirNodeEl.querySelector('.sync-delta-badge');
     if (deltaBadgeEl) {
       deltaBadgeEl.onclick = (e) => {
         e.stopPropagation();
@@ -4704,7 +4715,20 @@ let currentSyncSubDir = null;
 // currentSyncFiles entries: { path, indexed }. selectedSyncFiles = desired
 // membership (checked = in index; apply reconciles both ways).
 let currentSyncFiles = [];
-let selectedSyncFiles = new Set();
+let selectedSyncFiles = new Set(); // derived: desired == 'indexed' (compat)
+let syncDesired = new Map(); // path -> 'indexed' | 'unindexed' | 'ignored'
+
+// Desired-state setter: single writer for seg control, select-all, VCS
+// helpers. Persists mute (ignored display) alongside; rule IO happens only
+// in apply (and toggleMute's immediate tree path).
+function setDesired(filePath, state) {
+  if (!filePath) return;
+  syncDesired.set(filePath, state);
+  if (state === 'indexed') selectedSyncFiles.add(filePath);
+  else selectedSyncFiles.delete(filePath);
+  if (state === 'ignored') setMuted(currentSyncProject, filePath, true);
+  else setMuted(currentSyncProject, filePath, false);
+}
 let activePreviewFile = null;
 
 // Indexing manager state: every source file with its membership.
@@ -4745,6 +4769,12 @@ function buildSyncFileState(proj) {
   all.sort((a, b) => a.path.localeCompare(b.path));
   currentSyncFiles = all;
   selectedSyncFiles = new Set(idx);
+  syncDesired = new Map();
+  for (const e of all) {
+    if (e.indexed) syncDesired.set(e.path, 'indexed');
+    else if (e.muted) syncDesired.set(e.path, 'ignored');
+    else syncDesired.set(e.path, 'unindexed');
+  }
 }
 
 function normSlash(s) {
@@ -4825,6 +4855,18 @@ window.closeSyncReviewModal = function() {
   }
 };
 
+function segBtnStyle(active, color) {
+  return `padding:3px 9px; font-size:0.72rem; border-radius:5px; cursor:pointer; border:1px solid ${active ? color : '#30363d'}; background:${active ? color + '26' : '#21262d'}; color:${active ? color : '#8b949e'}; font-weight:${active ? '600' : '400'};`;
+}
+
+function paintSeg(rowEl, active) {
+  rowEl.querySelectorAll('.seg-ctl button').forEach(b => {
+    const seg = b.getAttribute('data-seg');
+    const color = seg === 'indexed' ? '#3fb950' : seg === 'unindexed' ? '#d29922' : '#8b949e';
+    b.style.cssText = segBtnStyle(seg === active, color);
+  });
+}
+
 window.renderSyncFileList = function() {
   const listEl = document.getElementById('syncFileList');
   const searchVal = (document.getElementById('syncModalSearch')?.value || '').trim().toLowerCase();
@@ -4850,7 +4892,7 @@ window.renderSyncFileList = function() {
     const rowVcs = !!entry.vcsIgnored;
     const rowForced = !!entry.forced;
     const rowMuted = !!entry.muted && !rowIndexed;
-    const isChecked = selectedSyncFiles.has(filePath);
+    const desiredState = syncDesired.get(filePath) || 'unindexed';
     const isActive = activePreviewFile === filePath;
     const icon = getSyncFileIcon(filePath);
     const normPath = normSlash(filePath);
@@ -4881,7 +4923,11 @@ window.renderSyncFileList = function() {
     if (rowIndexed) { bBg = 'rgba(35,134,54,0.15)'; bFg = '#3fb950'; bBd = 'rgba(35,134,54,0.3)'; bTx = t('sync_status_indexed'); }
     if (rowMuted) { bBg = 'rgba(110,118,129,0.15)'; bFg = '#8b949e'; bBd = 'rgba(110,118,129,0.3)'; bTx = t('sync_status_ignored'); }
     row.innerHTML = `
-      <input type="checkbox" ${isChecked ? 'checked' : ''} ${(!isChecked && rowVcs) ? 'title="' + t('gitignored_tip') + '"' : ''} style="cursor: pointer;" />
+      <div class="seg-ctl" style="display:flex; gap:4px; flex-shrink:0;" title="${t('seg_pick_tip')}">
+        <button data-seg="indexed" style="${segBtnStyle(desiredState === 'indexed', '#3fb950')}">${t('seg_indexed')}</button>
+        <button data-seg="unindexed" style="${segBtnStyle(desiredState === 'unindexed', '#d29922')}">${t('seg_pending')}</button>
+        <button data-seg="ignored" style="${segBtnStyle(desiredState === 'ignored', '#8b949e')}">${t('seg_ignored')}</button>
+      </div>
       <span style="font-size: 1rem;">${icon}</span>
       <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
         <span style="color: ${isActive ? '#58a6ff' : '#c9d1d9'}; font-weight: 500; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</span>
@@ -4890,16 +4936,15 @@ window.renderSyncFileList = function() {
       <span class="sync-state-badge" style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${bBg}; color: ${bFg}; border: 1px solid ${bBd}; flex-shrink: 0; cursor: pointer;" title="${t('sync_badge_toggle_tip')}">${bTx}</span>
     `;
 
-    const chk = row.querySelector('input[type="checkbox"]');
-    chk.onclick = (e) => {
-      e.stopPropagation();
-      if (chk.checked) {
-        selectedSyncFiles.add(filePath);
-      } else {
-        selectedSyncFiles.delete(filePath);
-      }
-      updateSyncDiffText();
-    };
+    row.querySelectorAll('.seg-ctl button').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const want = btn.getAttribute('data-seg');
+        setDesired(filePath, want);
+        paintSeg(row, want);
+        updateSyncDiffText();
+      };
+    });
 
     const stateBadge = row.querySelector('.sync-state-badge');
     if (stateBadge) {
@@ -4930,9 +4975,7 @@ window.toggleAllSyncFiles = function(select) {
   const visibleFiles = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
   
   visibleFiles.forEach(e => {
-    if (e.muted && !e.indexed) return;  // muted = skip me (manual check still counts)
-    if (select) selectedSyncFiles.add(e.path);
-    else selectedSyncFiles.delete(e.path);
+    setDesired(e.path, select ? 'indexed' : 'unindexed');
   });
 
   window.renderSyncFileList();
@@ -4941,22 +4984,29 @@ window.toggleAllSyncFiles = function(select) {
 function updateSyncDiffText() {
   const countEl = document.getElementById('syncSelectionCount');
   if (countEl) {
-    const d = syncDesiredDiff();
-    countEl.textContent = t('sync_diff_count', { i: d.toIndex, r: d.toRemove, u: d.toUnignore, total: currentSyncFiles.length });
+    const d = planIndexing();
+    countEl.textContent = t('sync_desired_diff', { i: d.idx.length, m: d.kicks.length, k: d.mutes.length, total: currentSyncFiles.length });
   }
 }
 
-// Desired vs actual: checked-but-unindexed get indexed, indexed-but-unchecked
-// get ruled+kicked, checked-but-ignored get un-ruled (then indexed by sync).
-function syncDesiredDiff() {
-  const desired = selectedSyncFiles;
-  let toIndex = 0, toRemove = 0, toUnignore = 0;
+// Desired-vs-current plan: pure data, no IO. Apply executes it in order:
+// exclusions (rules+kick), includes (force+kick), soft kicks, scoped sync.
+function planIndexing() {
+  const idx = [], soft = [], ign = [], unr = [], frc = [], unfr = [], mutes = [], kicks = [];
   for (const e of currentSyncFiles) {
-    if (desired.has(e.path) && !e.indexed) toIndex++;
-    if (!desired.has(e.path) && e.indexed) toRemove++;
-    if (desired.has(e.path) && e.ignored) toUnignore++;
+    const want = syncDesired.get(e.path) || 'unindexed';
+    const wasMuted = !!(e.muted) && !e.indexed;
+    if (want === 'indexed' && !e.indexed) idx.push(e.path);
+    if (want === 'indexed' && e.ignored) unr.push(e.path);
+    if (want === 'indexed' && e.vcsIgnored && !e.indexed) frc.push(e.path);
+    if (want === 'unindexed' && e.indexed && !e.forced) soft.push(e.path);
+    if (want === 'unindexed' && e.forced) unfr.push(e.path);
+    if (want === 'ignored' && !e.ignored && !e.vcsIgnored) ign.push(e.path);
+    if (want === 'ignored' && !e.indexed && !wasMuted) mutes.push(e.path);
+    if (want !== 'indexed' && e.indexed) kicks.push(e.path);
   }
-  return { toIndex, toRemove, toUnignore };
+  const ded = (a) => [...new Set(a)];
+  return { idx: ded(idx), soft: ded(soft), ign: ded(ign), unr: ded(unr), frc: ded(frc), unfr: ded(unfr), mutes: ded(mutes), kicks: ded(kicks) };
 }
 
 function resetSyncCodeViewer() {
@@ -5190,6 +5240,7 @@ function loadFileMeta(project, filePath) {
 
 async function reloadSyncFileList(keepChecks = false) {
   const keep = keepChecks ? new Set(selectedSyncFiles) : null;
+  const keepWant = keepChecks ? new Map(syncDesired) : null;
   try {
     const projRes = await fetch('/api/projects');
     allProjectsList = await projRes.json();
@@ -5198,6 +5249,9 @@ async function reloadSyncFileList(keepChecks = false) {
   buildSyncFileState(proj);
   if (keep) {
     selectedSyncFiles = new Set([...keep].filter(p => currentSyncFiles.some(e => e.path === p)));
+    for (const [p, s] of keepWant) {
+      if (currentSyncFiles.some(e => e.path === p)) syncDesired.set(p, s);
+    }
   }
   window.renderSyncFileList();
   if (activePreviewFile && currentSyncFiles.some(e => e.path === activePreviewFile)) {
@@ -5232,7 +5286,7 @@ window.unignoreVcsFile = async function(project, filePath) {
     }
     showToast(t('sync_vcs_unignored', { n: filePath }));
     await reloadSyncFileList();
-    selectedSyncFiles.add(filePath);
+    setDesired(filePath, 'indexed');
     window.renderSyncFileList();
   } catch (err) {
     alert(t('index_failed', { e: err.message }));
@@ -5241,7 +5295,7 @@ window.unignoreVcsFile = async function(project, filePath) {
 
 window.forceIndexVcsFile = async function(project, filePath) {
   if (!project || !filePath) return;
-  selectedSyncFiles.add(filePath);
+  setDesired(filePath, 'indexed');
   window.renderSyncFileList();
   await window.applyIndexing();
 };
@@ -5250,19 +5304,15 @@ window.forceIndexVcsFile = async function(project, filePath) {
 // then scoped sync (CLI skips ruled files natively, indexes the rest).
 window.applyIndexing = async function() {
   if (!currentSyncProject) return;
-  const diff = syncDesiredDiff();
-  const removePaths = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path) && e.indexed && !e.forced).map(e => e.path);
-  const unignorePaths = currentSyncFiles.filter(e => selectedSyncFiles.has(e.path) && e.ignored).map(e => e.path);
-  const forcePaths = currentSyncFiles.filter(e => selectedSyncFiles.has(e.path) && e.vcsIgnored && !e.indexed).map(e => e.path);
-  const unforcePaths = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path) && e.forced).map(e => e.path);
-  if (diff.toIndex === 0 && removePaths.length === 0 && unignorePaths.length === 0 && forcePaths.length === 0 && unforcePaths.length === 0) {
+  const plan = planIndexing();
+  if (plan.idx.length === 0 && plan.soft.length === 0 && plan.ign.length === 0 && plan.unr.length === 0 && plan.frc.length === 0 && plan.unfr.length === 0) {
     showToast(t('sync_nothing_to_do'));
     return;
   }
-  // Anything touching codegraph.json rules or dropping rows asks first.
-  // Pure index-new-files goes straight through.
-  const ruleChange = removePaths.length + unignorePaths.length + forcePaths.length + unforcePaths.length;
-  if (ruleChange > 0 && !confirm(t('sync_apply_confirm', { r: diff.toRemove, i: diff.toIndex, u: diff.toUnignore, f: forcePaths.length }))) return;
+  // Pure index-new-files goes straight through; anything dropping rows or
+  // touching codegraph.json rules asks first.
+  const noisy = plan.soft.length + plan.ign.length + plan.unr.length + plan.frc.length + plan.unfr.length;
+  if (noisy > 0 && !confirm(t('sync_apply_confirm', { i: plan.idx.length, m: plan.kicks.length, k: plan.mutes.length }))) return;
   const btn = document.getElementById('btnSyncSelected');
   const originalText = btn ? btn.innerHTML : '';
   if (btn) {
@@ -5271,35 +5321,38 @@ window.applyIndexing = async function() {
   }
 
   try {
-    let added = 0, resolved = 0, rfiles = 0, rnodes = 0, unig = 0;
-    const removePaths = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path) && e.indexed && !e.forced).map(e => e.path);
-    const unignorePaths = currentSyncFiles.filter(e => selectedSyncFiles.has(e.path) && e.ignored).map(e => e.path);
-    const forcePaths = currentSyncFiles.filter(e => selectedSyncFiles.has(e.path) && e.vcsIgnored && !e.indexed).map(e => e.path);
-    const unforcePaths = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path) && e.forced).map(e => e.path);
-    if (removePaths.length > 0 || unignorePaths.length > 0) {
+    let added = 0, resolved = 0, rfiles = 0;
+    if (plan.ign.length > 0 || plan.unr.length > 0 || plan.soft.length > 0) {
       const res = await fetch('/api/project/exclusions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: currentSyncProject, add: removePaths, remove: unignorePaths })
+        body: JSON.stringify({ project: currentSyncProject, add: plan.ign, remove: [...plan.unr, ...plan.soft] })
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'exclusions failed');
-      rfiles = (data.kicked && data.kicked.files) || 0;
-      rnodes = (data.kicked && data.kicked.nodes) || 0;
-      unig = unignorePaths.length;
+      rfiles += (data.kicked && data.kicked.files) || 0;
     }
-    if (forcePaths.length > 0 || unforcePaths.length > 0) {
+    if (plan.frc.length > 0 || plan.unfr.length > 0) {
       const resI = await fetch('/api/project/includes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: currentSyncProject, add: forcePaths, remove: unforcePaths })
+        body: JSON.stringify({ project: currentSyncProject, add: plan.frc, remove: plan.unfr })
       });
       const dataI = await resI.json();
       if (!dataI.success) throw new Error(dataI.error || 'includes failed');
       rfiles += (dataI.kicked && dataI.kicked.files) || 0;
-      rnodes += (dataI.kicked && dataI.kicked.nodes) || 0;
     }
-    if (diff.toIndex > 0) {
+    for (const fp of plan.soft) {
+      const resS = await fetch('/api/file/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject, file_path: fp, rule: false })
+      });
+      const dataS = await resS.json();
+      if (!dataS.success) throw new Error(dataS.error || ('remove failed: ' + fp));
+      rfiles += ((dataS.removed && dataS.removed.files) || 0);
+    }
+    if (plan.idx.length > 0) {
       const res = await fetch('/api/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5311,7 +5364,7 @@ window.applyIndexing = async function() {
       added = (per.metrics && per.metrics.nodes_added) || 0;
       resolved = (per.metrics && per.metrics.pending_resolved) || 0;
     }
-    showToast(t('sync_apply_toast', { added, resolved, rfiles, rnodes, u: unig }));
+    showToast(t('sync_apply_toast', { added, resolved, rfiles, k: plan.mutes.length }));
     loadRootGraph();
     await reloadSyncFileList();
   } catch (err) {

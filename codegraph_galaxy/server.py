@@ -485,6 +485,13 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         data = request.get_json(silent=True) or {}
         project = (data.get("project") or "").strip()
         rel_path = (data.get("file_path") or data.get("path") or "").strip()
+        # rule defaults True (kick-out means stay-out); rule:false = pure
+        # DB kick for the manager's soft-remove (returns to plain pending).
+        use_rule = data.get("rule", True)
+        if isinstance(use_rule, str):
+            use_rule = use_rule.lower() not in ("0", "false", "no")
+        else:
+            use_rule = bool(use_rule)
         if not project or not rel_path:
             return jsonify({"success": False,
                             "error": "project and file_path required"}), 400
@@ -509,18 +516,20 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             except Exception as ex:
                 return jsonify({"success": False,
                                 "error": "Remove failed: %s" % ex}), 500
-            # Kick-out means stay-out: persist the official CLI gate so no
-            # future sync (scoped or global) resurrects this file. Also drop
-            # any include override so the config never contradicts itself.
-            try:
-                FnWriteExcludes(repo_path, [rel_path], [])
-            except Exception as ex:
-                rule_error = "Rule not saved: %s" % ex
-            if not rule_error:
+            if use_rule:
+                # Kick-out means stay-out: persist the official CLI gate so
+                # no future sync (scoped or global) resurrects this file.
+                # Also drop any include override so the config never
+                # contradicts itself.
                 try:
-                    FnWriteIncludes(repo_path, [], [rel_path])
+                    FnWriteExcludes(repo_path, [rel_path], [])
                 except Exception as ex:
-                    rule_error = "Include not cleared: %s" % ex
+                    rule_error = "Rule not saved: %s" % ex
+                if not rule_error:
+                    try:
+                        FnWriteIncludes(repo_path, [], [rel_path])
+                    except Exception as ex:
+                        rule_error = "Include not cleared: %s" % ex
         out = {"success": True, "removed": removed}
         if rule_error:
             out["rule_error"] = rule_error
@@ -638,6 +647,17 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             except ValueError as ex:
                 return jsonify({"success": False,
                                 "error": str(ex)}), 400
+            # Mirror cross-clean: forced files must not linger in exclude
+            # (exclude wins at the CLI and would silently void the force).
+            if v_add:
+                try:
+                    FnWriteExcludes(repo_path, [], v_add)
+                except json.JSONDecodeError as ex:
+                    return jsonify({"success": False,
+                                    "error": "codegraph.json corrupt, fix by hand: %s" % ex}), 500
+                except ValueError as ex:
+                    return jsonify({"success": False,
+                                    "error": str(ex)}), 400
             kicked = {"files": 0, "nodes": 0, "edges": 0, "refs": 0,
                       "paths": []}
             db = get_db_path(repo_path)

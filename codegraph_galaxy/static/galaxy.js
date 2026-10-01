@@ -474,6 +474,8 @@ const I18N = {
     sync_diff_count: 'Sync: index {i} · remove {r} · unignore {u} ({total} files)',
     sync_status_indexed: 'Indexed',
     sync_status_ignored: 'Ignored',
+    sync_status_gitignored: 'Git-ignored',
+    gitignored_tip: 'Blocked by .gitignore — the indexer will never take this file',
     sync_apply_confirm: 'Sync index state?\nIndex {i} files, remove {r} files from the index.',
     sync_apply_toast: '⚡ Synced: +{added} nodes, {resolved} resolved, −{rfiles} files ({rnodes} nodes), {u} unignored.',
     rule_save_failed: 'Ignore rule NOT saved — file may return after sync: {e}',
@@ -654,6 +656,8 @@ const I18N = {
     sync_diff_count: '同步：入庫 {i} ・ 踢出 {r} ・ 取消忽略 {u}（共 {total} 檔）',
     sync_status_indexed: '已入庫',
     sync_status_ignored: '規則忽略',
+    sync_status_gitignored: 'Git 忽略',
+    gitignored_tip: '被 .gitignore 擋掉——索引器永遠不會收這個檔',
     rule_save_failed: '忽略規則沒存上——同步後可能回來：{e}',
     sync_status_ignored: '規則忽略',
     rule_save_failed: '忽略規則沒存上——同步後可能回來：{e}',
@@ -4569,24 +4573,29 @@ let selectedSyncFiles = new Set();
 let activePreviewFile = null;
 
 // Indexing manager state: every source file with its membership.
-// state: indexed (checked) / pending (unchecked) / ignored (unchecked + ruled).
+// indexed (checked) / pending (unchecked) / ignored (unchecked + ruled) /
+// vcs-ignored (unchecked + disabled: .gitignore blocks the CLI forever).
 function buildSyncFileState(proj) {
   const indexed = (proj && proj.indexed_files) ? [...proj.indexed_files] : [];
   const fresh = (proj && proj.unindexed_files) ? [...proj.unindexed_files] : [];
   const ruled = (proj && proj.rule_ignored) ? [...proj.rule_ignored] : [];
-  let idx = indexed, fr = fresh, ig = ruled;
+  const vcs = (proj && proj.vcs_ignored) ? [...proj.vcs_ignored] : [];
+  let idx = indexed, fr = fresh, ig = ruled, vc = vcs;
   if (currentSyncSubDir) {
     const normSub = normSlash(currentSyncSubDir).toLowerCase();
     const inScope = (f) => normSlash(f).toLowerCase().startsWith(normSub);
     idx = idx.filter(inScope);
     fr = fr.filter(inScope);
     ig = ig.filter(inScope);
+    vc = vc.filter(inScope);
   }
   const idxSet = new Set(idx.map(f => normSlash(f)));
+  const notIdx = (f) => !idxSet.has(normSlash(f));
   const all = [
-    ...idx.map(f => ({ path: f, indexed: true, ignored: false })),
-    ...fr.filter(f => !idxSet.has(normSlash(f))).map(f => ({ path: f, indexed: false, ignored: false })),
-    ...ig.filter(f => !idxSet.has(normSlash(f))).map(f => ({ path: f, indexed: false, ignored: true }))
+    ...idx.map(f => ({ path: f, indexed: true, ignored: false, vcsIgnored: false })),
+    ...fr.filter(notIdx).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: false })),
+    ...ig.filter(notIdx).map(f => ({ path: f, indexed: false, ignored: true, vcsIgnored: false })),
+    ...vc.filter(notIdx).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: true }))
   ];
   all.sort((a, b) => a.path.localeCompare(b.path));
   currentSyncFiles = all;
@@ -4693,6 +4702,7 @@ window.renderSyncFileList = function() {
     const filePath = entry.path;
     const rowIndexed = !!entry.indexed;
     const rowIgnored = !!entry.ignored;
+    const rowVcs = !!entry.vcsIgnored;
     const isChecked = selectedSyncFiles.has(filePath);
     const isActive = activePreviewFile === filePath;
     const icon = getSyncFileIcon(filePath);
@@ -4718,13 +4728,13 @@ window.renderSyncFileList = function() {
     row.onmouseout = () => { if (!isActive) row.style.background = 'transparent'; };
 
     row.innerHTML = `
-      <input type="checkbox" ${isChecked ? 'checked' : ''} style="cursor: pointer;" />
+      <input type="checkbox" ${isChecked ? 'checked' : ''} ${rowVcs ? 'disabled title="' + t('gitignored_tip') + '"' : ''} style="cursor: ${rowVcs ? 'not-allowed' : 'pointer'};" />
       <span style="font-size: 1rem;">${icon}</span>
       <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
         <span style="color: ${isActive ? '#58a6ff' : '#c9d1d9'}; font-weight: 500; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</span>
         ${dirPath ? `<span style="color: #6e7681; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dirPath}</span>` : ''}
       </div>
-      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${rowIndexed ? 'rgba(35,134,54,0.15)' : rowIgnored ? 'rgba(110,118,129,0.15)' : 'rgba(210,153,34,0.15)'}; color: ${rowIndexed ? '#3fb950' : rowIgnored ? '#8b949e' : '#d29922'}; border: 1px solid ${rowIndexed ? 'rgba(35,134,54,0.3)' : rowIgnored ? 'rgba(110,118,129,0.3)' : 'rgba(210,153,34,0.3)'}; flex-shrink: 0;">${rowIndexed ? t('sync_status_indexed') : rowIgnored ? t('sync_status_ignored') : t('sync_status_unindexed')}</span>
+      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${rowIndexed ? 'rgba(35,134,54,0.15)' : (rowIgnored || rowVcs) ? 'rgba(110,118,129,0.15)' : 'rgba(210,153,34,0.15)'}; color: ${rowIndexed ? '#3fb950' : (rowIgnored || rowVcs) ? '#8b949e' : '#d29922'}; border: 1px solid ${rowIndexed ? 'rgba(35,134,54,0.3)' : (rowIgnored || rowVcs) ? 'rgba(110,118,129,0.3)' : 'rgba(210,153,34,0.3)'}; flex-shrink: 0;">${rowIndexed ? t('sync_status_indexed') : rowIgnored ? t('sync_status_ignored') : rowVcs ? t('sync_status_gitignored') : t('sync_status_unindexed')}</span>
     `;
 
     const chk = row.querySelector('input[type="checkbox"]');
@@ -4759,6 +4769,7 @@ window.toggleAllSyncFiles = function(select) {
   const visibleFiles = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
   
   visibleFiles.forEach(e => {
+    if (e.vcsIgnored) return;  // git-blocked: Select All must not promise it
     if (select) selectedSyncFiles.add(e.path);
     else selectedSyncFiles.delete(e.path);
   });
@@ -4780,7 +4791,7 @@ function syncDesiredDiff() {
   const desired = selectedSyncFiles;
   let toIndex = 0, toRemove = 0, toUnignore = 0;
   for (const e of currentSyncFiles) {
-    if (desired.has(e.path) && !e.indexed) toIndex++;
+    if (desired.has(e.path) && !e.indexed && !e.vcsIgnored) toIndex++;
     if (!desired.has(e.path) && e.indexed) toRemove++;
     if (desired.has(e.path) && e.ignored) toUnignore++;
   }
@@ -4819,7 +4830,7 @@ window.selectSyncFileForPreview = async function(filePath) {
   if (badgeEl) {
     badgeEl.style.display = 'inline-block';
     const ent = (currentSyncFiles || []).find(e => e.path === filePath);
-    badgeEl.textContent = (ent && ent.indexed) ? t('sync_status_indexed') : (ent && ent.ignored) ? t('sync_status_ignored') : t('sync_status_unindexed');
+    badgeEl.textContent = (ent && ent.indexed) ? t('sync_status_indexed') : (ent && ent.ignored) ? t('sync_status_ignored') : (ent && ent.vcsIgnored) ? t('sync_status_gitignored') : t('sync_status_unindexed');
   }
   if (actionsEl) actionsEl.style.display = 'flex';
   if (contentEl) {

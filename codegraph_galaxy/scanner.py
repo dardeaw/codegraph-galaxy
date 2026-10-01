@@ -1,9 +1,40 @@
 """Repository discovery, file system scanning, and database metrics."""
 import os
 import sqlite3
+import subprocess
 from typing import Dict, List, Optional, Set, Tuple
 from .constants import IGNORE_DIRS, SRC_EXTS, DOC_EXTS
 from .exclusions import FnReadExcludes, FnIsExcluded
+
+
+def _FnGitIgnored(repo_path: str, rel_paths: List[str]) -> Set[str]:
+    """Subset git refuses (respects .gitignore). Empty when not a git repo.
+
+    The CLI honors .gitignore natively, so these files can NEVER be indexed
+    no matter how often you sync — showing "index me" for them is a lie.
+    Non-matching output (CJK/codec edge) safely stays pending, never hidden.
+    """
+    try:
+        if not rel_paths:
+            return set()
+        if not os.path.isdir(os.path.join(repo_path, ".git")):
+            return set()
+        # Bytes in/out: text mode would translate \n to \r\n on Windows and
+        # git would C-quote the echoed paths (no match). quotepath off keeps
+        # CJK names matchable; undecodable output safely stays pending.
+        p = subprocess.run(
+            ["git", "-c", "core.quotepath=off", "-C", repo_path,
+             "check-ignore", "--stdin"],
+            input="\n".join(rel_paths).encode("utf-8"),
+            capture_output=True, timeout=30)
+        if p.returncode not in (0, 1):
+            return set()
+        return {ln.strip().replace("\\", "/")
+                for ln in (p.stdout or b"").decode("utf-8",
+                                                   errors="replace").splitlines()
+                if ln.strip()}
+    except Exception:
+        return set()
 
 def get_db_path(repo_path: str) -> Optional[str]:
     """Return SQLite database path for a CodeGraph repository if present."""
@@ -21,11 +52,11 @@ def scan_disk_files(repo_path: str) -> Set[str]:
                 disk_files.add(rel)
     return disk_files
 
-def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], List[str], List[str]]:
-    """Node count, edge count, unindexed, indexed, and rule-ignored files."""
+def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], List[str], List[str], List[str]]:
+    """Node/edge counts, unindexed, indexed, rule-ignored, git-ignored."""
     db_path = get_db_path(repo_path)
     if not db_path:
-        return 0, 0, [], [], []
+        return 0, 0, [], [], [], []
     
     indexed_files: Set[str] = set()
     node_count = 0
@@ -52,12 +83,17 @@ def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], Lis
         v_rules = FnReadExcludes(repo_path)
     except Exception:
         v_rules = []
+    v_delta = disk_files - indexed_files
+    v_git = _FnGitIgnored(repo_path, sorted(v_delta))
     pending = sorted(
-        f for f in (disk_files - indexed_files)
-        if not f.lower().endswith(DOC_EXTS) and not FnIsExcluded(f, v_rules))
+        f for f in v_delta
+        if not f.lower().endswith(DOC_EXTS) and f not in v_git
+        and not FnIsExcluded(f, v_rules))
     ignored = sorted(
-        f for f in (disk_files - indexed_files) if FnIsExcluded(f, v_rules))
-    return node_count, edge_count, pending, sorted(indexed_files), ignored
+        f for f in v_delta if f not in v_git and FnIsExcluded(f, v_rules))
+    vcs_ignored = sorted(v_delta & v_git)
+    return (node_count, edge_count, pending, sorted(indexed_files),
+            ignored, vcs_ignored)
 
 def scan_repositories(search_roots: List[str]) -> Dict[str, str]:
     """Scan search roots and return a dict of {project_name: abs_path}."""

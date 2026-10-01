@@ -83,7 +83,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         for name, p in sorted(repos.items()):
             db = get_db_path(p)
-            nodes, edges, unindexed, indexed, ignored = get_repo_metrics_and_delta(p) if db else (0, 0, [], [], [])
+            nodes, edges, unindexed, indexed, ignored, vcs = get_repo_metrics_and_delta(p) if db else (0, 0, [], [], [], [])
             projects.append({
                 "name": name,
                 "path": p,
@@ -94,6 +94,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                 "unindexed_files": unindexed,
                 "indexed_files": indexed,
                 "rule_ignored": ignored,
+                "vcs_ignored": vcs,
                 "pending_sync_count": len(unindexed)
             })
 
@@ -125,7 +126,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             if not db:
                 continue
 
-            _, _, unindexed, _, _ = get_repo_metrics_and_delta(repo_path)
+            _, _, unindexed, _, _, _ = get_repo_metrics_and_delta(repo_path)
             if unindexed:
                 unindexed_by_project[proj_name] = unindexed
 
@@ -384,7 +385,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         def _metrics(repo):
             if not get_db_path(repo):
                 return {"nodes": 0, "edges": 0, "pending": 0}
-            n, e, u, _, _ = get_repo_metrics_and_delta(repo)
+            n, e, u, _, _, _ = get_repo_metrics_and_delta(repo)
             return {"nodes": n, "edges": e, "pending": len(u)}
 
         if want:

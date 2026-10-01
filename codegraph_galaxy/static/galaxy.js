@@ -473,7 +473,13 @@ const I18N = {
     seg_indexed: 'Indexed',
     seg_pending: 'Unindexed',
     seg_ignored: 'Ignored',
-    seg_pick_tip: 'Pick target state for this file',
+    seg_indexed_tip: 'Want it in the index — sync brings it in',
+    seg_pending_tip: 'Leave pending — next sync will index it',
+    seg_ignored_tip: 'Mute — remove from index + write rule, future syncs skip it',
+    sync_sel_mute: 'Ignore All',
+    sync_sel_all_tip: 'Set all visible files to Indexed',
+    sync_sel_none_tip: 'Set all visible files to Unindexed (soft, no rules)',
+    sync_sel_mute_tip: 'Set all visible files to Ignored (rules written on apply)',
     sync_desired_diff: 'Index {i} · Remove {m} · Mute {k} ({total} files)',
     indexed_count_tip: '{n} files indexed — click to open indexing manager',
     sync_badge_toggle_tip: 'Click to mute / unmute',
@@ -662,7 +668,13 @@ const I18N = {
     seg_indexed: '入庫',
     seg_pending: '待辦',
     seg_ignored: '靜音',
-    seg_pick_tip: '為此檔選擇目標狀態',
+    seg_indexed_tip: '想入庫：同步會把它帶進索引',
+    seg_pending_tip: '待辦：先放著，下次同步會進來',
+    seg_ignored_tip: '靜音：移出索引＋寫規則，以後同步跳過',
+    sync_sel_mute: '全靜音',
+    sync_sel_all_tip: '可見檔案全部設為入庫',
+    sync_sel_none_tip: '可見檔案全部設為待辦（軟的，不寫規則）',
+    sync_sel_mute_tip: '可見檔案全部設為靜音（套用時寫規則）',
     sync_desired_diff: '入庫 {i} ・ 移出 {m} ・ 靜音 {k}（共 {total} 檔）',
     indexed_count_tip: '已入庫 {n} 個檔案——點擊開啟入庫總管',
     sync_badge_toggle_tip: '點擊靜音／取消靜音',
@@ -4801,9 +4813,11 @@ function updateSyncModalI18n() {
   const searchEl = document.getElementById('syncModalSearch');
   if (searchEl) searchEl.placeholder = t('sync_search_ph');
   const selAllEl = document.getElementById('btn-sync-sel-all');
-  if (selAllEl) selAllEl.textContent = t('sync_sel_all');
+  if (selAllEl) { selAllEl.textContent = t('sync_sel_all'); selAllEl.title = t('sync_sel_all_tip'); }
   const selNoneEl = document.getElementById('btn-sync-sel-none');
-  if (selNoneEl) selNoneEl.textContent = t('sync_sel_none');
+  if (selNoneEl) { selNoneEl.textContent = t('sync_sel_none'); selNoneEl.title = t('sync_sel_none_tip'); }
+  const selMuteEl = document.getElementById('btn-sync-sel-mute');
+  if (selMuteEl) { selMuteEl.textContent = t('sync_sel_mute'); selMuteEl.title = t('sync_sel_mute_tip'); }
   const btnSyncEl = document.getElementById('lbl-btn-sync');
   if (btnSyncEl) btnSyncEl.textContent = t('sync_btn_sync');
   const emptyTipEl = document.getElementById('lbl-sync-code-empty');
@@ -4923,10 +4937,10 @@ window.renderSyncFileList = function() {
     if (rowIndexed) { bBg = 'rgba(35,134,54,0.15)'; bFg = '#3fb950'; bBd = 'rgba(35,134,54,0.3)'; bTx = t('sync_status_indexed'); }
     if (rowMuted) { bBg = 'rgba(110,118,129,0.15)'; bFg = '#8b949e'; bBd = 'rgba(110,118,129,0.3)'; bTx = t('sync_status_ignored'); }
     row.innerHTML = `
-      <div class="seg-ctl" style="display:flex; gap:4px; flex-shrink:0;" title="${t('seg_pick_tip')}">
-        <button data-seg="indexed" style="${segBtnStyle(desiredState === 'indexed', '#3fb950')}">${t('seg_indexed')}</button>
-        <button data-seg="unindexed" style="${segBtnStyle(desiredState === 'unindexed', '#d29922')}">${t('seg_pending')}</button>
-        <button data-seg="ignored" style="${segBtnStyle(desiredState === 'ignored', '#8b949e')}">${t('seg_ignored')}</button>
+      <div class="seg-ctl" style="display:flex; gap:4px; flex-shrink:0;">
+        <button data-seg="indexed" title="${t('seg_indexed_tip')}" style="${segBtnStyle(desiredState === 'indexed', '#3fb950')}">${t('seg_indexed')}</button>
+        <button data-seg="unindexed" title="${t('seg_pending_tip')}" style="${segBtnStyle(desiredState === 'unindexed', '#d29922')}">${t('seg_pending')}</button>
+        <button data-seg="ignored" title="${t('seg_ignored_tip')}" style="${segBtnStyle(desiredState === 'ignored', '#8b949e')}">${t('seg_ignored')}</button>
       </div>
       <span style="font-size: 1rem;">${icon}</span>
       <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
@@ -4973,9 +4987,10 @@ window.filterSyncFileList = function() {
 window.toggleAllSyncFiles = function(select) {
   const searchVal = (document.getElementById('syncModalSearch')?.value || '').trim().toLowerCase();
   const visibleFiles = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
+  const target = select === 'ignored' ? 'ignored' : select ? 'indexed' : 'unindexed';
   
   visibleFiles.forEach(e => {
-    setDesired(e.path, select ? 'indexed' : 'unindexed');
+    setDesired(e.path, target);
   });
 
   window.renderSyncFileList();

@@ -463,9 +463,6 @@ const I18N = {
     toast_reindex_done: 'Index rebuilt successfully.',
     toast_input_path: 'Please enter a valid directory path.',
     tree_filter_ph: 'Filter explorer...',
-    pending_sync_tip: 'Physical files on disk not indexed yet (Click to review & index)',
-    dir_unindexed_tip: '{n} unindexed files inside (Click to review & index)',
-    indexed_clean_tip: 'Fully indexed — click to open indexing manager',
     sync_modal_title: 'Indexing Manager',
     sync_modal_sub: 'All source files. Checked = in index. Sync indexes new checks and removes unchecks.',
     sync_search_ph: '🔍 Filter file path or extension...',
@@ -474,6 +471,7 @@ const I18N = {
     sync_diff_count: 'Sync: index {i} · remove {r} · unignore {u} ({total} files)',
     sync_status_indexed: 'Indexed',
     sync_status_ignored: 'Ignored',
+    indexed_count_tip: '{n} files indexed — click to open indexing manager',
     sync_badge_toggle_tip: 'Click to mute / unmute',
     sync_vcs_choice_text: 'Blocked by .gitignore. Un-ignore edits version control (file becomes committable); Force only affects the index (git never knows).',
     sync_vcs_unignore: 'Un-ignore (.gitignore)',
@@ -504,7 +502,7 @@ const I18N = {
     meta_indexed: 'DB: {n} nodes · {e} edges · indexed {at} · disk {size}',
     meta_unindexed: 'Unindexed · disk {size} · modified {at}',
     meta_missing: 'File not on disk and not in index.',
-    tree_status: '{r} repos · {n} nodes · {p} pending',
+    tree_status: '{r} repos · {n} nodes · {f} indexed',
   },
   'zh-TW': {
     lang_btn: '語系: 繁中',
@@ -650,9 +648,6 @@ const I18N = {
     toast_reindex_done: '全量重建索引完成。',
     toast_input_path: '請輸入有效的目錄路徑。',
     tree_filter_ph: '過濾檔案與符號...',
-    pending_sync_tip: '硬碟實體存在但尚未入庫至 CodeGraph 的檔案（點擊檢閱並建庫）',
-    dir_unindexed_tip: '內含 {n} 個未建庫檔案（點擊檢閱並建庫）',
-    indexed_clean_tip: '已全數入庫——點擊開啟入庫總管',
     sync_modal_title: '入庫總管',
     sync_modal_sub: '全部原始檔。勾選＝在庫裡；同步＝入庫新勾、踢掉取消勾。',
     sync_search_ph: '🔍 搜尋過濾檔案路徑或副檔名...',
@@ -661,6 +656,7 @@ const I18N = {
     sync_diff_count: '同步：入庫 {i} ・ 踢出 {r} ・ 取消忽略 {u}（共 {total} 檔）',
     sync_status_indexed: '已入庫',
     sync_status_ignored: '規則忽略',
+    indexed_count_tip: '已入庫 {n} 個檔案——點擊開啟入庫總管',
     sync_badge_toggle_tip: '點擊靜音／取消靜音',
     sync_vcs_choice_text: '被 .gitignore 擋住。解 Ignore 會改版控（檔案變成可提交）；強制入庫只動索引（git 完全不知情）。',
     sync_vcs_unignore: '解 Ignore（改 .gitignore）',
@@ -691,7 +687,7 @@ const I18N = {
     meta_indexed: '庫內：{n} 節點 · {e} 邊 · 建庫於 {at} · 磁碟 {size}',
     meta_unindexed: '未入庫 · 磁碟 {size} · 修改於 {at}',
     meta_missing: '磁碟上沒有此檔，索引內也沒有。',
-    tree_status: '{r} 個庫 · {n} 節點 · {p} 待入庫',
+    tree_status: '{r} 個庫 · {n} 節點 · 已入庫 {f} 檔',
   }
 };
 
@@ -1461,14 +1457,14 @@ function toggleTreePanel() {
   btn.classList.toggle('active', !panel.classList.contains('collapsed'));
 }
 
-function countUnindexedInDir(dirObj) {
+function countIndexedInDir(dirObj) {
   if (!dirObj) return 0;
   let count = 0;
   for (const f of Object.values(dirObj.files || {})) {
-    if (f && f.is_unindexed && !f.is_ignored && !f.is_vcs) count++;
+    if (f && !f.is_unindexed) count++;
   }
   for (const d of Object.values(dirObj.dirs || {})) {
-    count += countUnindexedInDir(d);
+    count += countIndexedInDir(d);
   }
   return count;
 }
@@ -1567,7 +1563,7 @@ function buildProjectTree() {
   if (readyProjects.length === 0) {
     container.innerHTML = '<div style="font-size:11px; color:#8b949e; padding:8px;">No indexed repositories</div>';
     const sb0 = document.getElementById('tree-statusbar');
-    if (sb0) sb0.innerText = t('tree_status', { r: 0, n: 0, p: 0 });
+    if (sb0) sb0.innerText = t('tree_status', { r: 0, n: 0, f: 0 });
     return;
   }
 
@@ -1576,8 +1572,8 @@ function buildProjectTree() {
   const sbEl = document.getElementById('tree-statusbar');
   if (sbEl) {
     const totNodes = readyProjects.reduce((a, p) => a + (p.nodes || 0), 0);
-    const totPending = readyProjects.reduce((a, p) => a + (p.pending_sync_count || 0), 0);
-    sbEl.innerText = t('tree_status', { r: readyProjects.length, n: totNodes, p: totPending });
+    const totIndexed = readyProjects.reduce((a, p) => a + ((p.indexed_files || []).length), 0);
+    sbEl.innerText = t('tree_status', { r: readyProjects.length, n: totNodes, f: totIndexed });
   }
 
   // Build recursive directory structure for active nodes per project
@@ -1710,7 +1706,7 @@ function buildProjectTree() {
     const projName = proj.name;
     const isSelected = selectedProjects.has(projName);
     const projData = projRoots[projName] || { dirs: {}, files: {} };
-    const pendingCount = proj.pending_sync_count || (proj.unindexed_files ? proj.unindexed_files.length : 0);
+    const indexedCount = (proj.indexed_files || []).length;
 
     const projNodeEl = document.createElement('div');
     projNodeEl.className = 'tree-node';
@@ -1722,13 +1718,13 @@ function buildProjectTree() {
       <span class="tree-arrow ${isProjOpen ? 'open' : ''}">▸</span>
       <input type="checkbox" ${isSelected ? 'checked' : ''} title="Toggle project inclusion" />
       <span style="font-weight:600; color:#58a6ff;">📦 ${projName}</span>
-      ${pendingCount > 0 ? `<span class="sync-delta-badge" title="${t('pending_sync_tip')}">⚡ ${pendingCount}</span>` : `<span class="sync-delta-badge" title="${t('indexed_clean_tip')}">⚡ 0</span>`}
-      <span class="node-kind-tag" style="margin-left:${pendingCount > 0 ? '4px' : 'auto'};">${isSelected ? 'active' : 'off'}</span>
+      <span class="mgr-entry-badge" title="${t('indexed_count_tip', { n: indexedCount })}">${indexedCount}</span>
+      <span class="node-kind-tag" style="margin-left:4px;">${isSelected ? 'active' : 'off'}</span>
     `;
 
-    const pendingBadgeEl = projNodeEl.querySelector('.sync-delta-badge');
-    if (pendingBadgeEl) {
-      pendingBadgeEl.onclick = (e) => {
+    const mgrBadgeEl = projNodeEl.querySelector('.mgr-entry-badge');
+    if (mgrBadgeEl) {
+      mgrBadgeEl.onclick = (e) => {
         e.stopPropagation();
         openSyncReviewModal(projName);
       };
@@ -1835,7 +1831,7 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
   const dirNames = Object.keys(dirObj.dirs || {}).sort();
   dirNames.forEach(dName => {
     const subDir = dirObj.dirs[dName];
-    const unindexedCount = countUnindexedInDir(subDir);
+    const indexedCount = countIndexedInDir(subDir);
     const cleanSubPath = (subDir.path || '').split(String.fromCharCode(92)).join('/');
     const dirKey = `${projName}:${cleanSubPath}`;
     const isDirOpen = openDirs ? openDirs.has(dirKey) : false;
@@ -1847,10 +1843,10 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     dirNodeEl.innerHTML = `
       <span class="tree-arrow ${isDirOpen ? 'open' : ''}">▸</span>
       <span style="font-weight:500; color:#e6edf3;">📁 ${dName}</span>
-      ${unindexedCount > 0 ? `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('dir_unindexed_tip', { n: unindexedCount })}">⚡ ${unindexedCount}</span>` : `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('indexed_clean_tip')}">⚡ 0</span>`}
+      <span class="mgr-entry-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('indexed_count_tip', { n: indexedCount })}">${indexedCount}</span>
     `;
 
-    const deltaBadgeEl = dirNodeEl.querySelector('.sync-delta-badge');
+    const deltaBadgeEl = dirNodeEl.querySelector('.mgr-entry-badge');
     if (deltaBadgeEl) {
       deltaBadgeEl.onclick = (e) => {
         e.stopPropagation();
@@ -2868,9 +2864,9 @@ function openProjectDrawer(projName, projObj) {
   document.getElementById('code-lines-badge').innerText = 'Project Scope';
   
   const projNodes = rawData.nodes.filter(n => n.project === projName);
-  const pendingCount = projObj && projObj.pending_sync_count ? projObj.pending_sync_count : 0;
+  const indexedCount = projObj && projObj.indexed_files ? projObj.indexed_files.length : 0;
   
-  document.getElementById('d-code').innerText = `// Project Repository Overview\n// Name: ${projName}\n// Directory: ${projObj ? projObj.path : 'N/A'}\n// Total Loaded Nodes: ${projNodes.length}\n// Pending Sync Files: ${pendingCount}\n\n// Tip: Click the pending badge to review and index unindexed files on disk.`;
+  document.getElementById('d-code').innerText = `// Project Repository Overview\n// Name: ${projName}\n// Directory: ${projObj ? projObj.path : 'N/A'}\n// Total Loaded Nodes: ${projNodes.length}\n// Indexed Files: ${indexedCount}\n\n// Tip: Click the count badge to open the indexing manager.`;
 
   document.getElementById('in-degree-count').innerText = '0';
   document.getElementById('out-degree-count').innerText = projNodes.length;

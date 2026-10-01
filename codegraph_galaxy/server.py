@@ -7,7 +7,7 @@ from flask import Flask, jsonify, request, Response
 from .config import load_config, save_config, get_search_roots
 from .scanner import scan_repositories, get_db_path, get_repo_metrics_and_delta
 from .graph import fetch_project_graph, extract_code_snippet, FnRemoveIndexedFile, FnRemoveIndexedFiles, FnFileInfo
-from .exclusions import FnReadExcludes, FnWriteExcludes
+from .exclusions import FnReadExcludes, FnWriteExcludes, FnWriteIncludes
 from .service import execute_sync, execute_init, execute_uninit, execute_reindex, get_codegraph_status
 from .chat_provider import GalaxyChatProvider, FnListProviders, FnSetChatDefault, FnAddProvider, FnDeleteProvider, FnTestProvider, FnListRemoteModels, FnFindNode
 
@@ -83,7 +83,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
 
         for name, p in sorted(repos.items()):
             db = get_db_path(p)
-            nodes, edges, unindexed, indexed, ignored, vcs = get_repo_metrics_and_delta(p) if db else (0, 0, [], [], [], [])
+            nodes, edges, unindexed, indexed, ignored, vcs, forced = get_repo_metrics_and_delta(p) if db else (0, 0, [], [], [], [], [])
             projects.append({
                 "name": name,
                 "path": p,
@@ -95,6 +95,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                 "indexed_files": indexed,
                 "rule_ignored": ignored,
                 "vcs_ignored": vcs,
+                "vcs_forced": forced,
                 "pending_sync_count": len(unindexed)
             })
 
@@ -126,7 +127,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             if not db:
                 continue
 
-            _, _, unindexed, _, _, _ = get_repo_metrics_and_delta(repo_path)
+            _, _, unindexed, _, _, _, _ = get_repo_metrics_and_delta(repo_path)
             if unindexed:
                 unindexed_by_project[proj_name] = unindexed
 
@@ -385,7 +386,7 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
         def _metrics(repo):
             if not get_db_path(repo):
                 return {"nodes": 0, "edges": 0, "pending": 0}
-            n, e, u, _, _, _ = get_repo_metrics_and_delta(repo)
+            n, e, u, _, _, _, _ = get_repo_metrics_and_delta(repo)
             return {"nodes": n, "edges": e, "pending": len(u)}
 
         if want:
@@ -509,11 +510,17 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                 return jsonify({"success": False,
                                 "error": "Remove failed: %s" % ex}), 500
             # Kick-out means stay-out: persist the official CLI gate so no
-            # future sync (scoped or global) resurrects this file.
+            # future sync (scoped or global) resurrects this file. Also drop
+            # any include override so the config never contradicts itself.
             try:
                 FnWriteExcludes(repo_path, [rel_path], [])
             except Exception as ex:
                 rule_error = "Rule not saved: %s" % ex
+            if not rule_error:
+                try:
+                    FnWriteIncludes(repo_path, [], [rel_path])
+                except Exception as ex:
+                    rule_error = "Include not cleared: %s" % ex
         out = {"success": True, "removed": removed}
         if rule_error:
             out["rule_error"] = rule_error
@@ -573,6 +580,17 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             except ValueError as ex:
                 return jsonify({"success": False,
                                 "error": str(ex)}), 400
+            # Newly excluded files must not linger in include (exclude wins
+            # at the CLI anyway; keep the file contradiction-free).
+            if v_add:
+                try:
+                    FnWriteIncludes(repo_path, [], v_add)
+                except json.JSONDecodeError as ex:
+                    return jsonify({"success": False,
+                                    "error": "codegraph.json corrupt, fix by hand: %s" % ex}), 500
+                except ValueError as ex:
+                    return jsonify({"success": False,
+                                    "error": str(ex)}), 400
             kicked = {"files": 0, "nodes": 0, "edges": 0, "refs": 0,
                       "paths": []}
             db = get_db_path(repo_path)
@@ -585,6 +603,52 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
                                     "Sync will still skip these files." % ex}), 500
         return jsonify({"success": True, "project": project,
                         "patterns": patterns, "kicked": kicked})
+
+    @app.route("/api/project/includes", methods=["POST"])
+    def set_includes():
+        """Force-index gate: merge add/remove into codegraph.json include.
+
+        include overrides .gitignore (official) — the manual override for
+        hand-picked files. Removing kicks the file from the DB now
+        (gitignore re-blocks all future syncs).
+        """
+        data = request.get_json(silent=True) or {}
+        project = (data.get("project") or "").strip()
+        v_add = data.get("add") or []
+        v_rem = data.get("remove") or []
+        if not project or not isinstance(v_add, list) \
+                or not isinstance(v_rem, list):
+            return jsonify({"success": False,
+                            "error": "project, add[], remove[] required"}), 400
+        if len(v_add) + len(v_rem) > 2000:
+            return jsonify({"success": False,
+                            "error": "Too many patterns (max 2000)"}), 400
+        roots = get_search_roots(search_roots)
+        repos = scan_repositories(roots)
+        repo_path = repos.get(project)
+        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
+            return jsonify({"success": False,
+                            "error": "Unknown project"}), 400
+        with _DB_WRITE_LOCK:
+            try:
+                includes, _ = FnWriteIncludes(repo_path, v_add, v_rem)
+            except json.JSONDecodeError as ex:
+                return jsonify({"success": False,
+                                "error": "codegraph.json corrupt, fix by hand: %s" % ex}), 500
+            except ValueError as ex:
+                return jsonify({"success": False,
+                                "error": str(ex)}), 400
+            kicked = {"files": 0, "nodes": 0, "edges": 0, "refs": 0,
+                      "paths": []}
+            db = get_db_path(repo_path)
+            if db and v_rem:
+                try:
+                    kicked = FnRemoveIndexedFiles(db, repo_path, v_rem)
+                except Exception as ex:
+                    return jsonify({"success": False,
+                                    "error": "Includes saved but kick failed: %s." % ex}), 500
+        return jsonify({"success": True, "project": project,
+                        "includes": includes, "kicked": kicked})
 
     @app.route("/api/file/info", methods=["GET"])
     def file_info():

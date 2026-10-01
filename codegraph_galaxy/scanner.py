@@ -4,7 +4,7 @@ import sqlite3
 import subprocess
 from typing import Dict, List, Optional, Set, Tuple
 from .constants import IGNORE_DIRS, SRC_EXTS, DOC_EXTS
-from .exclusions import FnReadExcludes, FnIsExcluded
+from .exclusions import FnReadExcludes, FnReadIncludes, FnIsExcluded
 
 
 def _FnGitIgnored(repo_path: str, rel_paths: List[str]) -> Set[str]:
@@ -52,11 +52,11 @@ def scan_disk_files(repo_path: str) -> Set[str]:
                 disk_files.add(rel)
     return disk_files
 
-def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], List[str], List[str], List[str]]:
-    """Node/edge counts, unindexed, indexed, rule-ignored, git-ignored."""
+def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], List[str], List[str], List[str], List[str]]:
+    """Node/edge counts, unindexed, indexed, rule-ignored, git-ignored, forced."""
     db_path = get_db_path(repo_path)
     if not db_path:
-        return 0, 0, [], [], [], []
+        return 0, 0, [], [], [], [], []
     
     indexed_files: Set[str] = set()
     node_count = 0
@@ -83,17 +83,27 @@ def get_repo_metrics_and_delta(repo_path: str) -> Tuple[int, int, List[str], Lis
         v_rules = FnReadExcludes(repo_path)
     except Exception:
         v_rules = []
+    try:
+        v_includes = FnReadIncludes(repo_path)
+    except Exception:
+        v_includes = []
     v_delta = disk_files - indexed_files
     v_git = _FnGitIgnored(repo_path, sorted(v_delta))
+    # Forced: indexed files carried in by the include gate (manual override
+    # of .gitignore). No subprocess needed — pure pattern match.
+    v_forced = sorted(f for f in indexed_files
+                      if FnIsExcluded(f, v_includes))
     pending = sorted(
         f for f in v_delta
         if not f.lower().endswith(DOC_EXTS) and f not in v_git
         and not FnIsExcluded(f, v_rules))
-    ignored = sorted(
-        f for f in v_delta if f not in v_git and FnIsExcluded(f, v_rules))
-    vcs_ignored = sorted(v_delta & v_git)
+    ignored = sorted(f for f in v_delta if FnIsExcluded(f, v_rules))
+    # include-matched files stay actionable (pending), never git-buried.
+    vcs_ignored = sorted(
+        f for f in v_delta & v_git
+        if not FnIsExcluded(f, v_rules) and not FnIsExcluded(f, v_includes))
     return (node_count, edge_count, pending, sorted(indexed_files),
-            ignored, vcs_ignored)
+            ignored, vcs_ignored, v_forced)
 
 def scan_repositories(search_roots: List[str]) -> Dict[str, str]:
     """Scan search roots and return a dict of {project_name: abs_path}."""

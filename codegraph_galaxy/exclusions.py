@@ -29,8 +29,8 @@ def _norm_pattern(p: Any) -> str:
     return n
 
 
-def FnReadExcludes(str_repo: str) -> List[str]:
-    """Patterns from the repo's codegraph.json (missing file -> [])."""
+def _FnReadList(str_repo: str, str_key: str) -> List[str]:
+    """Patterns from the repo's codegraph.json under key (missing -> [])."""
     cfg = _cfg_path(str_repo)
     if not os.path.isfile(cfg):
         return []
@@ -38,15 +38,15 @@ def FnReadExcludes(str_repo: str) -> List[str]:
         data = json.load(f)  # raises on corrupt file — caller decides
     if not isinstance(data, dict):
         raise ValueError("codegraph.json is not an object")
-    raw = data.get("exclude") or []
+    raw = data.get(str_key) or []
     if not isinstance(raw, list):
-        raise ValueError("codegraph.json exclude is not a list")
+        raise ValueError("codegraph.json %s is not a list" % str_key)
     return [_norm_pattern(p) for p in raw]
 
 
-def FnWriteExcludes(str_repo: str, v_add: List[str],
-                    v_remove: List[str]) -> Tuple[List[str], bool]:
-    """Merge add/remove into codegraph.json, preserving all other keys.
+def _FnWriteList(str_repo: str, str_key: str, v_add: List[str],
+                 v_remove: List[str]) -> Tuple[List[str], bool]:
+    """Merge add/remove into codegraph.json[key], preserving other keys.
 
     Creates the file when absent. NEVER clobbers a corrupt file (raises
     instead). Returns (patterns, changed).
@@ -60,27 +60,50 @@ def FnWriteExcludes(str_repo: str, v_add: List[str],
             data = json.load(f)
         if not isinstance(data, dict):
             raise ValueError("codegraph.json is not an object")
-        if "exclude" in data and not isinstance(data["exclude"], list):
-            raise ValueError("codegraph.json exclude is not a list")
-    v_cur: List[str] = [_norm_pattern(p) for p in (data.get("exclude") or [])]
+        if str_key in data and not isinstance(data[str_key], list):
+            raise ValueError("codegraph.json %s is not a list" % str_key)
+    v_cur: List[str] = [_norm_pattern(p) for p in (data.get(str_key) or [])]
     v_set = [p for p in v_cur if p not in v_rem_n]
     for p in v_add_n:
         if p not in v_set:
             v_set.append(p)
     if len(v_set) > MAX_PATTERNS:
-        raise ValueError("Too many exclude patterns (max %d)" % MAX_PATTERNS)
+        raise ValueError("Too many %s patterns (max %d)" % (str_key,
+                                                             MAX_PATTERNS))
     changed = (v_set != v_cur)
     if changed:
         if v_set:
-            data["exclude"] = v_set
+            data[str_key] = v_set
         else:
-            data.pop("exclude", None)
+            data.pop(str_key, None)
         tmp = cfg + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             f.write("\n")
         os.replace(tmp, cfg)
     return v_set, changed
+
+
+def FnReadExcludes(str_repo: str) -> List[str]:
+    """Patterns from the repo's codegraph.json (missing file -> [])."""
+    return _FnReadList(str_repo, "exclude")
+
+
+def FnWriteExcludes(str_repo: str, v_add: List[str],
+                    v_remove: List[str]) -> Tuple[List[str], bool]:
+    """Merge add/remove into codegraph.json exclude (see _FnWriteList)."""
+    return _FnWriteList(str_repo, "exclude", v_add, v_remove)
+
+
+def FnReadIncludes(str_repo: str) -> List[str]:
+    """Force-index patterns: overrides .gitignore (official include gate)."""
+    return _FnReadList(str_repo, "include")
+
+
+def FnWriteIncludes(str_repo: str, v_add: List[str],
+                    v_remove: List[str]) -> Tuple[List[str], bool]:
+    """Merge add/remove into codegraph.json include (see _FnWriteList)."""
+    return _FnWriteList(str_repo, "include", v_add, v_remove)
 
 
 def FnIsExcluded(str_rel: str, v_patterns: List[str]) -> bool:

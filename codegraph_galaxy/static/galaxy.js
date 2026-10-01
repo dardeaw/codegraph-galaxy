@@ -474,8 +474,7 @@ const I18N = {
     sync_diff_count: 'Sync: index {i} · remove {r} · unignore {u} ({total} files)',
     sync_status_indexed: 'Indexed',
     sync_status_ignored: 'Ignored',
-    sync_status_gitignored: 'Git-ignored',
-    sync_status_forced: 'Forced in',
+    sync_badge_toggle_tip: 'Click to mute / unmute',
     sync_vcs_choice_text: 'Blocked by .gitignore. Un-ignore edits version control (file becomes committable); Force only affects the index (git never knows).',
     sync_vcs_unignore: 'Un-ignore (.gitignore)',
     sync_vcs_force: 'Force index (git untouched)',
@@ -662,8 +661,7 @@ const I18N = {
     sync_diff_count: '同步：入庫 {i} ・ 踢出 {r} ・ 取消忽略 {u}（共 {total} 檔）',
     sync_status_indexed: '已入庫',
     sync_status_ignored: '規則忽略',
-    sync_status_gitignored: 'Git 忽略',
-    sync_status_forced: '強制入庫',
+    sync_badge_toggle_tip: '點擊靜音／取消靜音',
     sync_vcs_choice_text: '被 .gitignore 擋住。解 Ignore 會改版控（檔案變成可提交）；強制入庫只動索引（git 完全不知情）。',
     sync_vcs_unignore: '解 Ignore（改 .gitignore）',
     sync_vcs_force: '強制入庫（不動 git）',
@@ -832,6 +830,75 @@ const EDGE_COLORS = {
 let Graph = null;
 let allProjectsList = [];
 let selectedProjects = new Set();
+
+// Mute = display quiet for not-in-index files (local display preference).
+// Rules (exclude/include) are managed silently alongside, never shown.
+function loadMutedMap() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('galaxy-muted-files') || '{}');
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  } catch (e) { /* corrupted save ignored */ }
+  return {};
+}
+function saveMutedMap(m) {
+  try { localStorage.setItem('galaxy-muted-files', JSON.stringify(m)); } catch (e) { /* ignore */ }
+}
+function isMuted(project, filePath) {
+  const m = loadMutedMap();
+  const arr = m[project];
+  return Array.isArray(arr) && arr.indexOf(filePath) !== -1;
+}
+function setMuted(project, filePath, muted) {
+  const m = loadMutedMap();
+  let arr = Array.isArray(m[project]) ? m[project] : [];
+  if (muted) {
+    if (arr.indexOf(filePath) === -1) arr.push(filePath);
+  } else {
+    arr = arr.filter(p => p !== filePath);
+  }
+  if (arr.length) m[project] = arr; else delete m[project];
+  saveMutedMap(m);
+}
+
+// Badge toggle: yellow<->gray. Rules follow the visible state silently:
+// mute ensures exclude (unless git already blocks), unmute drops it.
+async function toggleMute(project, filePath, known) {
+  if (!project || !filePath) return;
+  const entry = ((typeof currentSyncFiles !== 'undefined' && currentSyncFiles) || []).find(e => e.path === filePath);
+  const vcs = !!(known && known.vcsIgnored) || !!(entry && entry.vcsIgnored);
+  const ruled = !!(known && known.ignored) || !!(entry && entry.ignored);
+  const toMute = !isMuted(project, filePath);
+  try {
+    if (toMute) {
+      if (!vcs && !ruled) {
+        const res = await fetch('/api/project/exclusions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project, add: [filePath], remove: [] })
+        });
+        const data = await res.json();
+        if (!data.success) { alert(t('index_failed', { e: data.error || '' })); return; }
+      }
+      setMuted(project, filePath, true);
+    } else {
+      const res = await fetch('/api/project/exclusions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, add: [], remove: [filePath] })
+      });
+      const data = await res.json();
+      if (!data.success) { alert(t('index_failed', { e: data.error || '' })); return; }
+      setMuted(project, filePath, false);
+    }
+    await refreshAfterIndexChange();
+    const modalEl = document.getElementById('syncReviewModal');
+    if (modalEl && modalEl.style.display === 'flex') {
+      await reloadSyncFileList(true);
+    }
+  } catch (err) {
+    alert(t('index_failed', { e: err.message }));
+  }
+}
 let currentLOD = 'arch';
 let rawData = { nodes: [], links: [], unindexed_by_project: {} };
 // Explorer tree source: full symbol list independent of the 3D LOD, so the
@@ -1398,7 +1465,7 @@ function countUnindexedInDir(dirObj) {
   if (!dirObj) return 0;
   let count = 0;
   for (const f of Object.values(dirObj.files || {})) {
-    if (f && f.is_unindexed) count++;
+    if (f && f.is_unindexed && !f.is_ignored && !f.is_vcs) count++;
   }
   for (const d of Object.values(dirObj.dirs || {})) {
     count += countUnindexedInDir(d);
@@ -1595,6 +1662,49 @@ function buildProjectTree() {
     });
   }
 
+  // Ingest rule-ignored + git-blocked rows: kept visible (gray/yellow),
+  // rules handled silently. allProjectsList already carries both lists.
+  const ingestExtraFiles = (projName, list, flags) => {
+    if (!projRoots[projName]) {
+      projRoots[projName] = { name: projName, dirs: {}, files: {} };
+    }
+    (list || []).forEach(fPath => {
+      const normPath = fPath.split(String.fromCharCode(92)).join('/').replace(/^\/+/, '');
+      const parts = normPath.split('/');
+      const fileName = parts.pop();
+      let currentDir = projRoots[projName];
+      let accumulatedPath = '';
+      parts.forEach(p => {
+        accumulatedPath = accumulatedPath ? `${accumulatedPath}/${p}` : p;
+        if (!currentDir.dirs[p]) {
+          currentDir.dirs[p] = {
+            name: p,
+            path: accumulatedPath,
+            dirs: {},
+            files: {}
+          };
+        }
+        currentDir = currentDir.dirs[p];
+      });
+      if (!currentDir.files[fileName]) {
+        currentDir.files[fileName] = {
+          name: fileName,
+          path: normPath,
+          symbols: [],
+          is_unindexed: true,
+          ...flags
+        };
+      } else {
+        Object.assign(currentDir.files[fileName], flags);
+      }
+    });
+  };
+  (allProjectsList || []).forEach(proj => {
+    if (!proj || proj.status !== 'ready') return;
+    ingestExtraFiles(proj.name, proj.rule_ignored, { is_ignored: true });
+    ingestExtraFiles(proj.name, proj.vcs_ignored, { is_vcs: true });
+  });
+
   // Render All Ready Project Roots
   readyProjects.forEach(proj => {
     const projName = proj.name;
@@ -1783,6 +1893,7 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     const cleanFilePath = (fileData.path || '').split(String.fromCharCode(92)).join('/');
     const fileKey = `${projName}:${cleanFilePath}`;
     const isFileOpen = openFiles ? openFiles.has(fileKey) : false;
+    const fileMuted = isUnindexed && isMuted(projName, cleanFilePath);
 
     const fileNode = isUnindexed ? {
       id: `${projName}:${cleanFilePath}`,
@@ -1792,7 +1903,9 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
       file_path: cleanFilePath,
       start_line: 1,
       end_line: 500,
-      is_unindexed: true
+      is_unindexed: true,
+      is_ignored: !!fileData.is_ignored,
+      is_vcs: !!fileData.is_vcs
     } : (symList.find(s => s.kind === 'file') || {
       id: `${projName}:${cleanFilePath}`,
       name: fName,
@@ -1809,11 +1922,26 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     if (isUnindexed) fileNodeEl.setAttribute('data-is-unindexed', 'true');
 
     if (isUnindexed) {
-      fileNodeEl.innerHTML = `
-        <span class="tree-arrow" style="visibility:hidden;">▸</span>
-        <span style="color:#d29922; font-weight:500;">📄 ${fName}</span>
-        <span class="node-kind-tag" style="background:#d2992222; color:#d29922; border:1px solid #d2992255;">UNINDEXED</span>
-      `;
+      if (fileMuted) {
+        fileNodeEl.innerHTML = `
+          <span class="tree-arrow" style="visibility:hidden;">▸</span>
+          <span style="color:#8b949e; font-weight:500;">📄 ${fName}</span>
+          <span class="node-kind-tag tree-mute-badge" style="background:#6e768122; color:#8b949e; border:1px solid #6e768155; cursor:pointer;" title="${t('sync_badge_toggle_tip')}">IGNORE</span>
+        `;
+      } else {
+        fileNodeEl.innerHTML = `
+          <span class="tree-arrow" style="visibility:hidden;">▸</span>
+          <span style="color:#d29922; font-weight:500;">📄 ${fName}</span>
+          <span class="node-kind-tag tree-mute-badge" style="background:#d2992222; color:#d29922; border:1px solid #d2992255; cursor:pointer;" title="${t('sync_badge_toggle_tip')}">UNINDEXED</span>
+        `;
+      }
+      const treeBadge = fileNodeEl.querySelector('.tree-mute-badge');
+      if (treeBadge) {
+        treeBadge.onclick = (e) => {
+          e.stopPropagation();
+          toggleMute(projName, cleanFilePath, { vcsIgnored: !!fileData.is_vcs, ignored: !!fileData.is_ignored });
+        };
+      }
     } else {
       fileNodeEl.innerHTML = `
         <span class="tree-arrow ${isFileOpen ? 'open' : ''}">▸</span>
@@ -2638,7 +2766,7 @@ function openUnindexedFileDrawer(node) {
     dIdx.style.display = '';
     const lblIdx = document.getElementById('lbl-d-index');
     if (lblIdx) lblIdx.textContent = t('d_index_file');
-    dIdx.onclick = () => indexFile(node.project, node.file_path);
+    dIdx.onclick = () => indexFile(node.project, node.file_path, node.is_vcs ? 'vcs' : 'rule');
   }
 
   loadFileMeta(node.project, node.file_path);
@@ -4603,6 +4731,7 @@ function buildSyncFileState(proj) {
   const idxSet = new Set(idx.map(f => normSlash(f)));
   const notIdx = (f) => !idxSet.has(normSlash(f));
   const forcedSet = new Set(((proj && proj.vcs_forced) || []).map(f => normSlash(f)));
+  const projName = (proj && proj.name) || '';
   // Backend lists are disjoint, but never render one path twice (first wins).
   const seen = new Set(idxSet);
   const uniq = (list) => list.filter(f => {
@@ -4612,10 +4741,10 @@ function buildSyncFileState(proj) {
     return true;
   });
   const all = [
-    ...idx.map(f => ({ path: f, indexed: true, ignored: false, vcsIgnored: false, forced: forcedSet.has(normSlash(f)) })),
-    ...uniq(fr.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: false })),
-    ...uniq(ig.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: true, vcsIgnored: false })),
-    ...uniq(vc.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: true }))
+    ...idx.map(f => ({ path: f, indexed: true, ignored: false, vcsIgnored: false, forced: forcedSet.has(normSlash(f)), muted: isMuted(projName, f) })),
+    ...uniq(fr.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: false, muted: isMuted(projName, f) })),
+    ...uniq(ig.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: true, vcsIgnored: false, muted: isMuted(projName, f) })),
+    ...uniq(vc.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: true, muted: isMuted(projName, f) }))
   ];
   all.sort((a, b) => a.path.localeCompare(b.path));
   currentSyncFiles = all;
@@ -4724,6 +4853,7 @@ window.renderSyncFileList = function() {
     const rowIgnored = !!entry.ignored;
     const rowVcs = !!entry.vcsIgnored;
     const rowForced = !!entry.forced;
+    const rowMuted = !!entry.muted && !rowIndexed;
     const isChecked = selectedSyncFiles.has(filePath);
     const isActive = activePreviewFile === filePath;
     const icon = getSyncFileIcon(filePath);
@@ -4748,13 +4878,12 @@ window.renderSyncFileList = function() {
     row.onmouseover = () => { if (!isActive) row.style.background = 'rgba(255,255,255,0.04)'; };
     row.onmouseout = () => { if (!isActive) row.style.background = 'transparent'; };
 
-    // Badge truth table: forced (your override) outranks indexed color.
+    // Badge truth table: green in index, gray muted, yellow attention.
+    // Rule/include/git mechanics stay invisible by design.
     let bBg = 'rgba(210,153,34,0.15)', bFg = '#d29922', bBd = 'rgba(210,153,34,0.3)';
     let bTx = t('sync_status_unindexed');
-    if (rowIgnored) { bBg = 'rgba(110,118,129,0.15)'; bFg = '#8b949e'; bBd = 'rgba(110,118,129,0.3)'; bTx = t('sync_status_ignored'); }
-    if (rowVcs) { bBg = 'rgba(110,118,129,0.15)'; bFg = '#8b949e'; bBd = 'rgba(110,118,129,0.3)'; bTx = t('sync_status_gitignored'); }
     if (rowIndexed) { bBg = 'rgba(35,134,54,0.15)'; bFg = '#3fb950'; bBd = 'rgba(35,134,54,0.3)'; bTx = t('sync_status_indexed'); }
-    if (rowForced) { bBg = 'rgba(88,166,255,0.15)'; bFg = '#58a6ff'; bBd = 'rgba(88,166,255,0.3)'; bTx = t('sync_status_forced'); }
+    if (rowMuted) { bBg = 'rgba(110,118,129,0.15)'; bFg = '#8b949e'; bBd = 'rgba(110,118,129,0.3)'; bTx = t('sync_status_ignored'); }
     row.innerHTML = `
       <input type="checkbox" ${isChecked ? 'checked' : ''} ${(!isChecked && rowVcs) ? 'title="' + t('gitignored_tip') + '"' : ''} style="cursor: pointer;" />
       <span style="font-size: 1rem;">${icon}</span>
@@ -4762,7 +4891,7 @@ window.renderSyncFileList = function() {
         <span style="color: ${isActive ? '#58a6ff' : '#c9d1d9'}; font-weight: 500; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</span>
         ${dirPath ? `<span style="color: #6e7681; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dirPath}</span>` : ''}
       </div>
-      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${bBg}; color: ${bFg}; border: 1px solid ${bBd}; flex-shrink: 0;">${bTx}</span>
+      <span class="sync-state-badge" style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${bBg}; color: ${bFg}; border: 1px solid ${bBd}; flex-shrink: 0; cursor: pointer;" title="${t('sync_badge_toggle_tip')}">${bTx}</span>
     `;
 
     const chk = row.querySelector('input[type="checkbox"]');
@@ -4775,6 +4904,14 @@ window.renderSyncFileList = function() {
       }
       updateSyncDiffText();
     };
+
+    const stateBadge = row.querySelector('.sync-state-badge');
+    if (stateBadge) {
+      stateBadge.onclick = (e) => {
+        e.stopPropagation();
+        toggleMute(currentSyncProject, filePath);
+      };
+    }
 
     row.onclick = () => {
       activePreviewFile = filePath;
@@ -4797,6 +4934,7 @@ window.toggleAllSyncFiles = function(select) {
   const visibleFiles = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
   
   visibleFiles.forEach(e => {
+    if (e.muted && !e.indexed) return;  // muted = skip me (manual check still counts)
     if (select) selectedSyncFiles.add(e.path);
     else selectedSyncFiles.delete(e.path);
   });
@@ -4857,7 +4995,8 @@ window.selectSyncFileForPreview = async function(filePath) {
   if (badgeEl) {
     badgeEl.style.display = 'inline-block';
     const ent = (currentSyncFiles || []).find(e => e.path === filePath);
-    badgeEl.textContent = (ent && ent.forced) ? t('sync_status_forced') : (ent && ent.indexed) ? t('sync_status_indexed') : (ent && ent.ignored) ? t('sync_status_ignored') : (ent && ent.vcsIgnored) ? t('sync_status_gitignored') : t('sync_status_unindexed');
+    const entMuted = !!(ent && ent.muted) && !(ent && ent.indexed);
+    badgeEl.textContent = (ent && ent.indexed) ? t('sync_status_indexed') : entMuted ? t('sync_status_ignored') : t('sync_status_unindexed');
   }
   if (actionsEl) actionsEl.style.display = 'flex';
   // VCS choice: git-blocked files get two honest doors (un-ignore edits
@@ -4951,6 +5090,7 @@ window.kickOutFile = async function(project, filePath) {
       const r = data.removed || {};
       showToast(t('toast_kicked_out', { n: filePath, nodes: r.nodes || 0, edges: r.edges || 0 }));
       if (data.rule_error) alert(t('rule_save_failed', { e: data.rule_error }));
+      setMuted(project, filePath, false);  // kicked files show yellow
       closeDrawer();
       await refreshAfterIndexChange();
     } else {
@@ -4961,19 +5101,34 @@ window.kickOutFile = async function(project, filePath) {
   }
 };
 
-window.indexFile = async function(project, filePath) {
+window.indexFile = async function(project, filePath, via) {
   if (!project || !filePath) return;
   try {
-    // Ruled files are skipped by sync: lift the rule first, then index.
-    const unRes = await fetch('/api/project/exclusions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project, add: [], remove: [filePath] })
-    });
-    const unData = await unRes.json();
-    if (!unData.success) {
-      alert(t('rule_save_failed', { e: unData.error || '' }));
-      return;
+    if (via === 'vcs') {
+      // Git-blocked: force via include gate, sync takes it.
+      const inRes = await fetch('/api/project/includes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, add: [filePath], remove: [] })
+      });
+      const inData = await inRes.json();
+      if (!inData.success) {
+        alert(t('rule_save_failed', { e: inData.error || '' }));
+        return;
+      }
+    } else {
+      // Ruled files are skipped by sync: lift the rule first, then index.
+      // Plain pending files: no-op remove, then sync.
+      const unRes = await fetch('/api/project/exclusions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, add: [], remove: [filePath] })
+      });
+      const unData = await unRes.json();
+      if (!unData.success) {
+        alert(t('rule_save_failed', { e: unData.error || '' }));
+        return;
+      }
     }
     const res = await fetch('/api/sync', {
       method: 'POST',
@@ -5037,13 +5192,17 @@ function loadFileMeta(project, filePath) {
     .catch(() => { /* meta is best-effort */ });
 }
 
-async function reloadSyncFileList() {
+async function reloadSyncFileList(keepChecks = false) {
+  const keep = keepChecks ? new Set(selectedSyncFiles) : null;
   try {
     const projRes = await fetch('/api/projects');
     allProjectsList = await projRes.json();
   } catch (e) { /* keep last good list */ }
   const proj = (allProjectsList || []).find(p => p.name === currentSyncProject);
   buildSyncFileState(proj);
+  if (keep) {
+    selectedSyncFiles = new Set([...keep].filter(p => currentSyncFiles.some(e => e.path === p)));
+  }
   window.renderSyncFileList();
   if (activePreviewFile && currentSyncFiles.some(e => e.path === activePreviewFile)) {
     window.selectSyncFileForPreview(activePreviewFile);
@@ -5096,11 +5255,18 @@ window.forceIndexVcsFile = async function(project, filePath) {
 window.applyIndexing = async function() {
   if (!currentSyncProject) return;
   const diff = syncDesiredDiff();
-  if (diff.toIndex === 0 && diff.toRemove === 0 && diff.toUnignore === 0) {
+  const removePaths = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path) && e.indexed && !e.forced).map(e => e.path);
+  const unignorePaths = currentSyncFiles.filter(e => selectedSyncFiles.has(e.path) && e.ignored).map(e => e.path);
+  const forcePaths = currentSyncFiles.filter(e => selectedSyncFiles.has(e.path) && e.vcsIgnored && !e.indexed).map(e => e.path);
+  const unforcePaths = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path) && e.forced).map(e => e.path);
+  if (diff.toIndex === 0 && removePaths.length === 0 && unignorePaths.length === 0 && forcePaths.length === 0 && unforcePaths.length === 0) {
     showToast(t('sync_nothing_to_do'));
     return;
   }
-  if (diff.toRemove > 0 && !confirm(t('sync_apply_confirm', { r: diff.toRemove, i: diff.toIndex }))) return;
+  // Anything touching codegraph.json rules or dropping rows asks first.
+  // Pure index-new-files goes straight through.
+  const ruleChange = removePaths.length + unignorePaths.length + forcePaths.length + unforcePaths.length;
+  if (ruleChange > 0 && !confirm(t('sync_apply_confirm', { r: diff.toRemove, i: diff.toIndex, u: diff.toUnignore, f: forcePaths.length }))) return;
   const btn = document.getElementById('btnSyncSelected');
   const originalText = btn ? btn.innerHTML : '';
   if (btn) {

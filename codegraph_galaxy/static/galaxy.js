@@ -471,10 +471,13 @@ const I18N = {
     sync_search_ph: '🔍 Filter file path or extension...',
     sync_sel_all: '✔ Select All',
     sync_sel_none: '✖ Clear',
-    sync_diff_count: 'Sync: index {i} · remove {r} ({total} files)',
+    sync_diff_count: 'Sync: index {i} · remove {r} · unignore {u} ({total} files)',
     sync_status_indexed: 'Indexed',
+    sync_status_ignored: 'Ignored',
     sync_apply_confirm: 'Sync index state?\nIndex {i} files, remove {r} files from the index.',
-    sync_apply_toast: '⚡ Synced: +{added} nodes, {resolved} resolved, −{rfiles} files ({rnodes} nodes).',
+    sync_apply_toast: '⚡ Synced: +{added} nodes, {resolved} resolved, −{rfiles} files ({rnodes} nodes), {u} unignored.',
+    rule_save_failed: 'Ignore rule NOT saved — file may return after sync: {e}',
+    toast_kicked_out: '🗑 {n} removed from index ({nodes} nodes, {edges} edges) + ignore rule saved.',
     sync_nothing_to_do: 'Already in sync — checks match the index.',
     sync_btn_sync: 'Sync Index State',
     sync_code_preview_tip: 'Select a file on the left to preview code',
@@ -484,7 +487,6 @@ const I18N = {
     sync_status_unindexed: 'Unindexed',
     sync_loading: 'Loading source code...',
     sync_in_progress: 'CodeGraph indexing in progress...',
-    sync_success_toast: '✅ {proj} indexing complete!',
     sync_lines: '{n} lines',
     d_index_file: 'Index File',
     d_remove_file: 'Remove from Index',
@@ -496,7 +498,6 @@ const I18N = {
     meta_unindexed: 'Unindexed · disk {size} · modified {at}',
     meta_missing: 'File not on disk and not in index.',
     tree_status: '{r} repos · {n} nodes · {p} pending',
-    sync_indexed_toast: '⚡ {proj} synced: {added} nodes added, {resolved} files resolved.'
   },
   'zh-TW': {
     lang_btn: '語系: 繁中',
@@ -650,10 +651,14 @@ const I18N = {
     sync_search_ph: '🔍 搜尋過濾檔案路徑或副檔名...',
     sync_sel_all: '✔ 全選',
     sync_sel_none: '✖ 全不選',
-    sync_diff_count: '同步：入庫 {i} ・ 踢出 {r}（共 {total} 檔）',
+    sync_diff_count: '同步：入庫 {i} ・ 踢出 {r} ・ 取消忽略 {u}（共 {total} 檔）',
     sync_status_indexed: '已入庫',
+    sync_status_ignored: '規則忽略',
+    rule_save_failed: '忽略規則沒存上——同步後可能回來：{e}',
+    sync_status_ignored: '規則忽略',
+    rule_save_failed: '忽略規則沒存上——同步後可能回來：{e}',
     sync_apply_confirm: '確定同步入庫狀態？\n入庫 {i} 個檔案，從索引踢出 {r} 個檔案。',
-    sync_apply_toast: '⚡ 已同步：＋{added} 節點，解決 {resolved} 個待入庫，踢出 {rfiles} 檔（{rnodes} 節點）。',
+    sync_apply_toast: '⚡ 已同步：＋{added} 節點，解決 {resolved} 個待入庫，踢出 {rfiles} 檔（{rnodes} 節點），取消忽略 {u} 個。',
     sync_nothing_to_do: '勾選與索引一致，無需同步。',
     sync_btn_sync: '同步入庫狀態',
     sync_code_preview_tip: '請從左側點選檔案以預覽代碼',
@@ -663,11 +668,10 @@ const I18N = {
     sync_status_unindexed: '未入庫',
     sync_loading: '載入原始碼中...',
     sync_in_progress: 'CodeGraph 索引建庫中...',
-    sync_success_toast: '✅ {proj} 索引建庫完成！',
     sync_lines: '{n} 行',
     d_index_file: '檔案入庫',
     d_remove_file: '踢出索引',
-    toast_kicked_out: '🗑 {n} 已踢出索引（{nodes} 節點、{edges} 邊）。檔案仍在磁碟上，標示為未入庫。',
+    toast_kicked_out: '🗑 {n} 已踢出（{nodes} 節點、{edges} 邊），忽略規則已存。',
     toast_indexed_file: '⚡ {n} 已入庫。還有 {pending} 個檔案待入庫。',
     kickout_failed: '踢出失敗：{e}',
     index_failed: '入庫失敗：{e}',
@@ -675,7 +679,6 @@ const I18N = {
     meta_unindexed: '未入庫 · 磁碟 {size} · 修改於 {at}',
     meta_missing: '磁碟上沒有此檔，索引內也沒有。',
     tree_status: '{r} 個庫 · {n} 節點 · {p} 待入庫',
-    sync_indexed_toast: '⚡ {proj} 同步完成：新增 {added} 節點，解決 {resolved} 個待入庫。',
   }
 };
 
@@ -4565,21 +4568,25 @@ let currentSyncFiles = [];
 let selectedSyncFiles = new Set();
 let activePreviewFile = null;
 
-// Indexing manager state: every source file with its index membership.
+// Indexing manager state: every source file with its membership.
+// state: indexed (checked) / pending (unchecked) / ignored (unchecked + ruled).
 function buildSyncFileState(proj) {
   const indexed = (proj && proj.indexed_files) ? [...proj.indexed_files] : [];
   const fresh = (proj && proj.unindexed_files) ? [...proj.unindexed_files] : [];
-  let idx = indexed, fr = fresh;
+  const ruled = (proj && proj.rule_ignored) ? [...proj.rule_ignored] : [];
+  let idx = indexed, fr = fresh, ig = ruled;
   if (currentSyncSubDir) {
     const normSub = normSlash(currentSyncSubDir).toLowerCase();
     const inScope = (f) => normSlash(f).toLowerCase().startsWith(normSub);
     idx = idx.filter(inScope);
     fr = fr.filter(inScope);
+    ig = ig.filter(inScope);
   }
   const idxSet = new Set(idx.map(f => normSlash(f)));
   const all = [
-    ...idx.map(f => ({ path: f, indexed: true })),
-    ...fr.filter(f => !idxSet.has(normSlash(f))).map(f => ({ path: f, indexed: false }))
+    ...idx.map(f => ({ path: f, indexed: true, ignored: false })),
+    ...fr.filter(f => !idxSet.has(normSlash(f))).map(f => ({ path: f, indexed: false, ignored: false })),
+    ...ig.filter(f => !idxSet.has(normSlash(f))).map(f => ({ path: f, indexed: false, ignored: true }))
   ];
   all.sort((a, b) => a.path.localeCompare(b.path));
   currentSyncFiles = all;
@@ -4685,6 +4692,7 @@ window.renderSyncFileList = function() {
   filtered.forEach(entry => {
     const filePath = entry.path;
     const rowIndexed = !!entry.indexed;
+    const rowIgnored = !!entry.ignored;
     const isChecked = selectedSyncFiles.has(filePath);
     const isActive = activePreviewFile === filePath;
     const icon = getSyncFileIcon(filePath);
@@ -4716,7 +4724,7 @@ window.renderSyncFileList = function() {
         <span style="color: ${isActive ? '#58a6ff' : '#c9d1d9'}; font-weight: 500; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</span>
         ${dirPath ? `<span style="color: #6e7681; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dirPath}</span>` : ''}
       </div>
-      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${rowIndexed ? 'rgba(35,134,54,0.15)' : 'rgba(210,153,34,0.15)'}; color: ${rowIndexed ? '#3fb950' : '#d29922'}; border: 1px solid ${rowIndexed ? 'rgba(35,134,54,0.3)' : 'rgba(210,153,34,0.3)'}; flex-shrink: 0;">${rowIndexed ? t('sync_status_indexed') : t('sync_status_unindexed')}</span>
+      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${rowIndexed ? 'rgba(35,134,54,0.15)' : rowIgnored ? 'rgba(110,118,129,0.15)' : 'rgba(210,153,34,0.15)'}; color: ${rowIndexed ? '#3fb950' : rowIgnored ? '#8b949e' : '#d29922'}; border: 1px solid ${rowIndexed ? 'rgba(35,134,54,0.3)' : rowIgnored ? 'rgba(110,118,129,0.3)' : 'rgba(210,153,34,0.3)'}; flex-shrink: 0;">${rowIndexed ? t('sync_status_indexed') : rowIgnored ? t('sync_status_ignored') : t('sync_status_unindexed')}</span>
     `;
 
     const chk = row.querySelector('input[type="checkbox"]');
@@ -4762,19 +4770,21 @@ function updateSyncDiffText() {
   const countEl = document.getElementById('syncSelectionCount');
   if (countEl) {
     const d = syncDesiredDiff();
-    countEl.textContent = t('sync_diff_count', { i: d.toIndex, r: d.toRemove, total: currentSyncFiles.length });
+    countEl.textContent = t('sync_diff_count', { i: d.toIndex, r: d.toRemove, u: d.toUnignore, total: currentSyncFiles.length });
   }
 }
 
-// Desired vs actual: checked-but-unindexed get indexed, indexed-but-unchecked get removed.
+// Desired vs actual: checked-but-unindexed get indexed, indexed-but-unchecked
+// get ruled+kicked, checked-but-ignored get un-ruled (then indexed by sync).
 function syncDesiredDiff() {
   const desired = selectedSyncFiles;
-  let toIndex = 0, toRemove = 0;
+  let toIndex = 0, toRemove = 0, toUnignore = 0;
   for (const e of currentSyncFiles) {
     if (desired.has(e.path) && !e.indexed) toIndex++;
     if (!desired.has(e.path) && e.indexed) toRemove++;
+    if (desired.has(e.path) && e.ignored) toUnignore++;
   }
-  return { toIndex, toRemove };
+  return { toIndex, toRemove, toUnignore };
 }
 
 function resetSyncCodeViewer() {
@@ -4809,7 +4819,7 @@ window.selectSyncFileForPreview = async function(filePath) {
   if (badgeEl) {
     badgeEl.style.display = 'inline-block';
     const ent = (currentSyncFiles || []).find(e => e.path === filePath);
-    badgeEl.textContent = (ent && ent.indexed) ? t('sync_status_indexed') : t('sync_status_unindexed');
+    badgeEl.textContent = (ent && ent.indexed) ? t('sync_status_indexed') : (ent && ent.ignored) ? t('sync_status_ignored') : t('sync_status_unindexed');
   }
   if (actionsEl) actionsEl.style.display = 'flex';
   if (contentEl) {
@@ -4880,6 +4890,7 @@ window.kickOutFile = async function(project, filePath) {
     if (data.success) {
       const r = data.removed || {};
       showToast(t('toast_kicked_out', { n: filePath, nodes: r.nodes || 0, edges: r.edges || 0 }));
+      if (data.rule_error) alert(t('rule_save_failed', { e: data.rule_error }));
       closeDrawer();
       await refreshAfterIndexChange();
     } else {
@@ -4893,6 +4904,17 @@ window.kickOutFile = async function(project, filePath) {
 window.indexFile = async function(project, filePath) {
   if (!project || !filePath) return;
   try {
+    // Ruled files are skipped by sync: lift the rule first, then index.
+    const unRes = await fetch('/api/project/exclusions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, add: [], remove: [filePath] })
+    });
+    const unData = await unRes.json();
+    if (!unData.success) {
+      alert(t('rule_save_failed', { e: unData.error || '' }));
+      return;
+    }
     const res = await fetch('/api/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4974,12 +4996,12 @@ async function reloadSyncFileList() {
   }
 }
 
-// Indexing manager apply: index new checks, then remove unchecks (sync
-// re-adds everything on disk, so removals must go last).
+// Indexing manager apply: rules first (official gate + instant kick),
+// then scoped sync (CLI skips ruled files natively, indexes the rest).
 window.applyIndexing = async function() {
   if (!currentSyncProject) return;
   const diff = syncDesiredDiff();
-  if (diff.toIndex === 0 && diff.toRemove === 0) {
+  if (diff.toIndex === 0 && diff.toRemove === 0 && diff.toUnignore === 0) {
     showToast(t('sync_nothing_to_do'));
     return;
   }
@@ -4992,7 +5014,21 @@ window.applyIndexing = async function() {
   }
 
   try {
-    let added = 0, resolved = 0, rfiles = 0, rnodes = 0;
+    let added = 0, resolved = 0, rfiles = 0, rnodes = 0, unig = 0;
+    const removePaths = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path) && e.indexed).map(e => e.path);
+    const unignorePaths = currentSyncFiles.filter(e => selectedSyncFiles.has(e.path) && e.ignored).map(e => e.path);
+    if (removePaths.length > 0 || unignorePaths.length > 0) {
+      const res = await fetch('/api/project/exclusions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject, add: removePaths, remove: unignorePaths })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'exclusions failed');
+      rfiles = (data.kicked && data.kicked.files) || 0;
+      rnodes = (data.kicked && data.kicked.nodes) || 0;
+      unig = unignorePaths.length;
+    }
     if (diff.toIndex > 0) {
       const res = await fetch('/api/sync', {
         method: 'POST',
@@ -5005,19 +5041,7 @@ window.applyIndexing = async function() {
       added = (per.metrics && per.metrics.nodes_added) || 0;
       resolved = (per.metrics && per.metrics.pending_resolved) || 0;
     }
-    const unchecked = currentSyncFiles.filter(e => !selectedSyncFiles.has(e.path)).map(e => e.path);
-    if (unchecked.length > 0) {
-      const res2 = await fetch('/api/files/remove', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: currentSyncProject, file_paths: unchecked })
-      });
-      const d2 = await res2.json();
-      if (!d2.success) throw new Error(d2.error || 'remove failed');
-      rfiles = (d2.removed && d2.removed.files) || 0;
-      rnodes = (d2.removed && d2.removed.nodes) || 0;
-    }
-    showToast(t('sync_apply_toast', { added, resolved, rfiles, rnodes }));
+    showToast(t('sync_apply_toast', { added, resolved, rfiles, rnodes, u: unig }));
     loadRootGraph();
     await reloadSyncFileList();
   } catch (err) {

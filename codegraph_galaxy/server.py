@@ -518,47 +518,6 @@ def create_app(initial_paths: Optional[List[str]] = None, search_roots: Optional
             out["rule_error"] = rule_error
         return jsonify(out)
 
-    @app.route("/api/files/remove", methods=["POST"])
-    def remove_indexed_files():
-        """Batch kick-out: delete many files' rows in ONE transaction.
-
-        Used by the indexing manager to reconcile unchecked files.
-        """
-        data = request.get_json(silent=True) or {}
-        project = (data.get("project") or "").strip()
-        rels = data.get("file_paths") or data.get("paths") or []
-        if not project or not isinstance(rels, list):
-            return jsonify({"success": False,
-                            "error": "project and file_paths required"}), 400
-        if len(rels) > 2000:
-            return jsonify({"success": False,
-                            "error": "Too many files (max 2000)"}), 400
-        roots = get_search_roots(search_roots)
-        repos = scan_repositories(roots)
-        repo_path = repos.get(project)
-        if not repo_path or os.path.abspath(repo_path) not in _known_repo_paths(repos):
-            return jsonify({"success": False,
-                            "error": "Unknown project"}), 400
-        db = get_db_path(repo_path)
-        if not db:
-            return jsonify({"success": False,
-                            "error": "Project not indexed"}), 400
-        rule_error = None
-        with _DB_WRITE_LOCK:
-            try:
-                removed = FnRemoveIndexedFiles(db, repo_path, rels)
-            except Exception as ex:
-                return jsonify({"success": False,
-                                "error": "Remove failed: %s" % ex}), 500
-            try:
-                FnWriteExcludes(repo_path, rels, [])
-            except Exception as ex:
-                rule_error = "Rules not saved: %s" % ex
-        out = {"success": True, "removed": removed}
-        if rule_error:
-            out["rule_error"] = rule_error
-        return jsonify(out)
-
     @app.route("/api/project/exclusions", methods=["GET"])
     def get_exclusions():
         """Read the repo's codegraph.json exclude rules (official gate)."""

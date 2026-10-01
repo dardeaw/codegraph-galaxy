@@ -1156,19 +1156,16 @@ function flightStep() {
   } else {
     right = { x: lastFlightRight.x, y: lastFlightRight.y, z: lastFlightRight.z };
   }
-  // Lift follows screen-up (worldUp minus its view-direction part), so Q/E
-  // moves content vertically on screen at any pitch — not world-Y.
-  const along = fwd.x * worldUp.x + fwd.y * worldUp.y + fwd.z * worldUp.z;
-  let up = { x: worldUp.x - fwd.x * along, y: worldUp.y - fwd.y * along, z: worldUp.z - fwd.z * along };
-  const ul = Math.sqrt(up.x * up.x + up.y * up.y + up.z * up.z);
-  if (ul > 1e-4) { up.x /= ul; up.y /= ul; up.z /= ul; }
-  else { up = { x: worldUp.x, y: worldUp.y, z: worldUp.z }; }
+  // Lift is WORLD-vertical (altitude): Q/E goes straight up/down at any
+  // pitch, never diagonal, never pans. Pan/strafe (A/D) is yaw-relative
+  // horizontal; dolly (W/S) follows the view. FPS-style, three axes clean.
+  const up = { x: 0, y: 1, z: 0 };
   const speed = dist * 0.02 * (flightKeys.has('shift') ? 3.5 : 1);
   const o = flightOffset(fwd, right, up, flightKeys, speed);
   if (!o.x && !o.y && !o.z) return false;
   const newPos = { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z };
   const newLook = { x: tgt.x + o.x, y: tgt.y + o.y, z: tgt.z + o.z };
-  // lookAt follows: pure translation, no tilt (Q/E is screen-up, A/D screen-right)
+  // lookAt follows: pure translation, no tilt (Q/E world-vertical, A/D yaw-level, W/S view dolly)
   Graph.cameraPosition(newPos, newLook);
   try {
     const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;

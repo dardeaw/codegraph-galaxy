@@ -53,11 +53,11 @@ Adapt visual density on the fly without overwhelming the screen:
 - **Built-in Code Preview**: Read live syntax-highlighted source code snippets without leaving the visualizer.
 - **1-Click IDE Launch**: Open the selected file directly at the exact line in **VS Code** or **Antigravity IDE**.
 
-### 6. Repository & Exclude Management
-- **Multi-Root Auto Discovery**: Automatically scans common workspace directories (`Projects`, `Workspace`, `PythonCode`, `Repos`, etc.).
-- **Custom Directory Ingestion**: Add arbitrary local directories via native OS folder dialogs or manual input.
-- **Visual Exclusion Rules**: Exclude build artifacts, test datasets, or legacy folders directly from the UI with persistent JSON storage.
-- **Project Lifecycle Control**: Initialize (`codegraph init`), uninitialize (`codegraph uninit`), or trigger full re-indexing (`codegraph index`) per project with live status feedback.
+### 6. Repository & Index Management (graphical CodeGraph management)
+- **Project File Manager**: the Explorer lists every source file on disk with live index status (Indexed / Unindexed / Ignored / Doc). Badges are clickable: click to mute a file to gray, click again to bring it back. Muted files stay visible in the tree.
+- **Indexing Manager**: per-project (or per-directory) full file list with code preview and three-state desired switch per file (Indexed / Unindexed / Ignored), plus Select All / Clear / Ignore All batch actions. Apply reconciles in order — rule writes with instant kick, force-index, scoped sync — and reports before/after counts.
+- **Direct, honest index control**: kick any file out of the sqlite index (it stays on disk as pending); rules persist in each repo's own `codegraph.json` (`exclude` / `include`, honored by every sync, nothing ever resurrects silently). `.gitignore`-blocked files are classified truthfully, with manual force-index or verified `.gitignore` un-ignore (rolled back on failure). Rule failures always alert loudly instead of fake success.
+- **Docs as citizens**: Markdown/JSON/HTML render as Doc nodes on the globe and in the tree, never nagged as pending. File detail pane shows DB record side by side with disk stat; tree status bar totals repositories, nodes, and indexed files. Project lifecycle (`init` / `uninit` / `index`) and scoped sync with metrics included.
 
 ### 7. AI Code Chat (Local LLM Agent)
 - **Ask the Codebase**: Toolbar **AI Chat** button opens a Copilot-style panel; the local LLM looks up the graph with tools (search / neighbors / code / blast-radius) instead of guessing.

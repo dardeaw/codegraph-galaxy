@@ -1024,6 +1024,14 @@ function init3DGraph() {
       }
     });
 
+  // No-roll preference: the lib defaults to trackball controls, which bank
+  // camera.up on drag (measured 102°/126° tilts) — silently rotating the
+  // screen axes keyboard flight is computed against. Real orbit controls
+  // never roll. Either way the per-frame pin in flightStep enforces level.
+  try {
+    if (Graph && typeof Graph.controlType === 'function') Graph.controlType('orbit');
+  } catch (e) { /* trackball stays, pinned level per frame */ }
+
   window.addEventListener('resize', () => {
     if (!Graph) return;
     layoutGraphViewport();
@@ -1127,6 +1135,13 @@ function startFlightLoop() {
 }
 
 function flightStep() {
+  // Pin camera up every frame (even with no keys): trackball controls roll
+  // object.up on drag, and flight math assumes a level horizon — without
+  // this D/E skews with accumulated roll. Cheap, idempotent, guarded.
+  try {
+    const cam = (typeof Graph !== 'undefined' && Graph && typeof Graph.camera === 'function') ? Graph.camera() : null;
+    if (cam && cam.up && (cam.up.x !== 0 || cam.up.y !== 1 || cam.up.z !== 0)) cam.up.set(0, 1, 0);
+  } catch (e) { /* ignore */ }
   if (!flightKeys.size || typeof Graph === 'undefined' || !Graph || !Graph.cameraPosition) return false;
   const pos = Graph.cameraPosition();
   let tgt = { x: 0, y: 0, z: 0 };

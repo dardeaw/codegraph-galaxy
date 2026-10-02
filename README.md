@@ -162,7 +162,10 @@ codegraph-galaxy/
 │   │   └── index.html         # Clean, semantic UI layout
 │   └── static/
 │       ├── galaxy.css         # High-performance stylesheet (dark cyberpunk theme)
-│       ├── galaxy.js          # 3D visualization, inspector & tree logic
+│       ├── galaxy.js          # Core: state, i18n, 3D graph, drawers, chat
+│       ├── galaxy-flight.js   # Keyboard flight (WASD/QE, pole-safe basis)
+│       ├── galaxy-tree.js     # Explorer tree panel
+│       ├── galaxy-manager.js  # Indexing manager modal & window handlers
 │       └── 3d-force-graph.min.js  # Three.js 3D force graph engine
 ├── electron/
 │   ├── main.js                # Desktop window & Python lifecycle manager

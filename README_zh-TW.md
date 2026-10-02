@@ -159,7 +159,10 @@ codegraph-galaxy/
 │   │   └── index.html         # 乾淨語義化之主介面結構
 │   └── static/
 │       ├── galaxy.css         # 高效能深色科技主題樣式表
-│       ├── galaxy.js          # 3D 星系視覺化、檔案樹與互動邏輯
+│       ├── galaxy.js          # 核心：狀態、i18n、3D 星系、抽屜、聊天
+│       ├── galaxy-flight.js   # 鍵盤飛行（WASD/QE，極點安全基底）
+│       ├── galaxy-tree.js     # Explorer 樹狀面板
+│       ├── galaxy-manager.js  # 入庫總管 modal 與 window 處理器
 │       └── 3d-force-graph.min.js  # Three.js 3D 力導向星系引擎
 ├── electron/
 │   ├── main.js                # 原生桌面視窗與 Python 生命週期守護

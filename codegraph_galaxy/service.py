@@ -65,15 +65,20 @@ def resolve_codegraph() -> Tuple[List[str], str, Optional[str]]:
             pkg = os.path.join(root, "node_modules", "@colbymchenry", f"codegraph-{tag}")
             # Verified layout of the platform package (win32-x64 1.6.0):
             # self-contained node.exe + lib/dist/bin/codegraph.js — no shell,
-            # no system node required.
+            # no system node required. index.js must exist next to the entry;
+            # a half-upgraded install without it fails cryptically otherwise.
             node_exe = os.path.join(pkg, "node.exe")
             entry_js = os.path.join(pkg, "lib", "dist", "bin", "codegraph.js")
-            if os.path.isfile(node_exe) and os.path.isfile(entry_js):
+            index_js = os.path.join(pkg, "lib", "dist", "index.js")
+            if all(os.path.isfile(p) for p in (node_exe, entry_js, index_js)):
                 return [node_exe, entry_js], "bundled", pkg
             # POSIX npm bin (shebang; needs node on PATH at exec time).
-            shim = os.path.join(root, "node_modules", ".bin", "codegraph")
-            if os.path.isfile(shim):
-                return [shim], "bundled", shim
+            # Skipped on Windows: the extensionless shim is not executable
+            # there and would shadow a working system-wide install.
+            if os.name != "nt":
+                shim = os.path.join(root, "node_modules", ".bin", "codegraph")
+                if os.path.isfile(shim):
+                    return [shim], "bundled", shim
 
     found = shutil.which("codegraph")
     if found:

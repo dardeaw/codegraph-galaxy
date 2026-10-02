@@ -11,6 +11,10 @@ SRC_EXTS = (
     ".hpp", ".cs", ".vue", ".html", ".css", ".sql", ".sh", ".json", ".yaml", ".yml"
 )
 
+# Parser-blind but human-readable: rendered as Doc citizens (globe + tree),
+# never nagged as pending. codegraph CLI has no grammar for these.
+DOC_EXTS = (".md", ".markdown", ".json", ".html")
+
 CONFIG_FILE = os.path.expanduser("~/.codegraph_viz_config.json")
 DEFAULT_PORT = 5001
 DEFAULT_HOST = "127.0.0.1"

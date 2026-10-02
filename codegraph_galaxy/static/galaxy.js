@@ -452,9 +452,6 @@ const I18N = {
     act_uninit: 'Uninit',
     act_sync: 'Incremental Index',
     act_reindex: 'Full Rebuild',
-    act_exclude: 'Exclude',
-    confirm_exclude: 'Exclude [{name}] from discovery list?',
-    toast_exclude_done: 'Project excluded from list.',
     btn_close: 'Close',
     confirm_uninit: 'Are you sure you want to uninitialize [{name}]?\nThis will remove its .codegraph index database.',
     toast_path_copied: 'Path copied to clipboard.',
@@ -466,16 +463,39 @@ const I18N = {
     toast_reindex_done: 'Index rebuilt successfully.',
     toast_input_path: 'Please enter a valid directory path.',
     tree_filter_ph: 'Filter explorer...',
-    pending_sync_tip: 'Physical files on disk not indexed yet (Click to review & index)',
-    dir_unindexed_tip: '{n} unindexed files inside (Click to review & index)',
-    sync_modal_title: 'Incremental Indexing & File Review',
-    sync_modal_sub: 'Inspect unindexed physical files on disk. Inspect source code, batch index into CodeGraph, or exclude.',
+    sync_modal_title: 'Indexing Manager',
+    sync_modal_sub: 'Pick a target per file: Indexed, Pending, or Ignored. Apply reconciles.',
     sync_search_ph: '🔍 Filter file path or extension...',
-    sync_sel_all: '✔ Select All',
-    sync_sel_none: '✖ Clear',
-    sync_sel_count: 'Selected {n} / {total}',
-    sync_btn_sync: 'Index to CodeGraph',
-    sync_btn_exclude: 'Exclude Selected',
+    sync_sel_all: '✔ Index All',
+    sync_sel_none: '✖ Unindex All',
+    sync_status_indexed: 'Indexed',
+    sync_status_ignored: 'Ignored',
+    seg_indexed: 'Indexed',
+    seg_pending: 'Unindexed',
+    seg_ignored: 'Ignored',
+    seg_indexed_tip: 'Want it in the index — sync brings it in (index only, git untouched)',
+    seg_pending_tip: 'Leave pending — next sync will index it (git untouched)',
+    seg_ignored_tip: 'Mute — remove from index + write rule, future syncs skip it (git untouched)',
+    sync_sel_mute: 'Ignore All',
+    sync_sel_all_tip: 'Set all visible files to Indexed',
+    sync_sel_none_tip: 'Set all visible files to Unindexed (soft, no rules)',
+    sync_sel_mute_tip: 'Set all visible files to Ignored (rules written on apply, git untouched)',
+    sync_desired_diff: 'Index {i} · Remove {m} · Mute {k} ({total} files)',
+    indexed_count_tip: '{n} files indexed — click to open indexing manager',
+    sync_badge_toggle_tip: 'Click to mute / unmute',
+    sync_vcs_choice_text: 'Git cannot see this file (excluded from version control). Un-ignore makes it committable; Force index only affects the code index.',
+    sync_vcs_unignore: 'Un-ignore (.gitignore)',
+    sync_vcs_force: 'Force index (git untouched)',
+    sync_vcs_unignore_confirm: 'Append !{n} to .gitignore? The file becomes committable.',
+    sync_vcs_unignored: '✓ {n} un-ignored — now checkable.',
+    sync_vcs_still_blocked: '⚠ {n} still blocked by {s} — parent dir or another source; fix by hand.',
+    gitignored_tip: 'Blocked by .gitignore — checking it forces indexing via an include rule',
+    sync_apply_confirm: 'Apply?\nIndex {i} files, remove {m} from the index, mute {k}.',
+    sync_apply_toast: '⚡ Applied: +{added} nodes ({resolved} resolved), −{rfiles} files, {k} muted.',
+    rule_save_failed: 'Ignore rule NOT saved — file may return after sync: {e}',
+    toast_kicked_out: '🗑 {n} removed from index ({nodes} nodes, {edges} edges) + ignore rule saved.',
+    sync_nothing_to_do: 'Already in sync — checks match the index.',
+    sync_btn_sync: 'Sync Index State',
     sync_code_preview_tip: 'Select a file on the left to preview code',
     sync_code_empty_tip: 'Click any file in the list to view its source code',
     sync_no_unindexed: '🎉 All files in this project/directory are fully indexed!',
@@ -483,10 +503,16 @@ const I18N = {
     sync_status_unindexed: 'Unindexed',
     sync_loading: 'Loading source code...',
     sync_in_progress: 'CodeGraph indexing in progress...',
-    sync_success_toast: '✅ {proj} indexing complete!',
-    sync_exclude_confirm: 'Exclude {n} selected files from indexing?',
-    sync_exclude_toast: '🚫 Excluded {n} files successfully!',
-    sync_lines: '{n} lines'
+    sync_lines: '{n} lines',
+    d_index_file: 'Index File',
+    d_remove_file: 'Remove from Index',
+    toast_indexed_file: '⚡ {n} indexed. {pending} files still pending.',
+    kickout_failed: 'Remove failed: {e}',
+    index_failed: 'Index failed: {e}',
+    meta_indexed: 'DB: {n} nodes · {e} edges · indexed {at} · disk {size}',
+    meta_unindexed: 'Unindexed · disk {size} · modified {at}',
+    meta_missing: 'File not on disk and not in index.',
+    tree_status: '{r} repos · {n} nodes · {f} indexed',
   },
   'zh-TW': {
     lang_btn: '語系: 繁中',
@@ -621,9 +647,6 @@ const I18N = {
     act_uninit: '退庫',
     act_sync: '增量建庫',
     act_reindex: '全量重建',
-    act_exclude: '排除',
-    confirm_exclude: '確定要將專案 [{name}] 從清單中排除嗎？',
-    toast_exclude_done: '已從清單中排除專案。',
     btn_close: '關閉',
     confirm_uninit: '確定要將專案 [{name}] 退庫嗎？\n此操作將移除其 .codegraph 索引資料庫。',
     toast_path_copied: '已複製檔案路徑。',
@@ -635,16 +658,38 @@ const I18N = {
     toast_reindex_done: '全量重建索引完成。',
     toast_input_path: '請輸入有效的目錄路徑。',
     tree_filter_ph: '過濾檔案與符號...',
-    pending_sync_tip: '硬碟實體存在但尚未入庫至 CodeGraph 的檔案（點擊檢閱並建庫）',
-    dir_unindexed_tip: '內含 {n} 個未建庫檔案（點擊檢閱並建庫）',
-    sync_modal_title: '專案增量建庫與檔案檢閱',
-    sync_modal_sub: '檢視尚未納入 CodeGraph 知識庫之實體檔案。可逐一檢閱代碼、勾選批次建庫 (Index) 或排除。',
+    sync_modal_title: '入庫總管',
+    sync_modal_sub: '逐檔選目標：入庫、待辦或靜音，套用後對帳。',
     sync_search_ph: '🔍 搜尋過濾檔案路徑或副檔名...',
-    sync_sel_all: '✔ 全選',
-    sync_sel_none: '✖ 全不選',
-    sync_sel_count: '已選 {n} / {total}',
-    sync_btn_sync: '執行 CodeGraph 索引建庫',
-    sync_btn_exclude: '排除已選',
+    sync_sel_all: '✔ 全入庫',
+    sync_sel_none: '✖ 取消入庫',
+    sync_status_indexed: '已入庫',
+    sync_status_ignored: '規則忽略',
+    seg_indexed: '入庫',
+    seg_pending: '待辦',
+    seg_ignored: '靜音',
+    seg_indexed_tip: '想入庫：同步會把它帶進索引（只動索引，不動 git）',
+    seg_pending_tip: '待辦：先放著，下次同步會進來（不動 git）',
+    seg_ignored_tip: '靜音：移出索引＋寫規則，以後同步跳過（不動 git）',
+    sync_sel_mute: '全靜音',
+    sync_sel_all_tip: '可見檔案全部設為入庫',
+    sync_sel_none_tip: '可見檔案全部設為待辦（軟的，不寫規則）',
+    sync_sel_mute_tip: '可見檔案全部設為靜音（套用時寫規則，不動 git）',
+    sync_desired_diff: '入庫 {i} ・ 移出 {m} ・ 靜音 {k}（共 {total} 檔）',
+    indexed_count_tip: '已入庫 {n} 個檔案——點擊開啟入庫總管',
+    sync_badge_toggle_tip: '點擊靜音／取消靜音',
+    sync_vcs_choice_text: 'git 看不到這個檔（被排除在版控之外）。解 Ignore 會讓它變成可提交；強制入庫只進索引，git 還是看不到。',
+    sync_vcs_unignore: '解 Ignore（改 .gitignore）',
+    sync_vcs_force: '強制入庫（不動 git）',
+    sync_vcs_unignore_confirm: '要在 .gitignore 加 !{n} 嗎？檔案會變成可提交。',
+    sync_vcs_unignored: '✓ {n} 已解 ignore——可以勾選了。',
+    sync_vcs_still_blocked: '⚠ {n} 還是被 {s} 擋住——可能是父目錄或別處規則，請手動處理。',
+    gitignored_tip: '被 .gitignore 擋掉——勾選會用 include 規則強制入庫',
+    rule_save_failed: '忽略規則沒存上——同步後可能回來：{e}',
+    sync_apply_confirm: '確定套用？\n入庫 {i} 個，移出 {m} 個，靜音 {k} 個。',
+    sync_apply_toast: '⚡ 已套用：＋{added} 節點（解決 {resolved} 個），移出 {rfiles} 檔，靜音 {k} 個。',
+    sync_nothing_to_do: '勾選與索引一致，無需同步。',
+    sync_btn_sync: '同步入庫狀態',
     sync_code_preview_tip: '請從左側點選檔案以預覽代碼',
     sync_code_empty_tip: '點擊左側檔案列表即可即時檢視代碼內容',
     sync_no_unindexed: '🎉 該專案/目錄之實體檔案已全數入庫！',
@@ -652,10 +697,17 @@ const I18N = {
     sync_status_unindexed: '未入庫',
     sync_loading: '載入原始碼中...',
     sync_in_progress: 'CodeGraph 索引建庫中...',
-    sync_success_toast: '✅ {proj} 索引建庫完成！',
-    sync_exclude_confirm: '確定要將已選取的 {n} 個檔案加入排除清單（不再提示未入庫）嗎？',
-    sync_exclude_toast: '🚫 已成功排除 {n} 個檔案！',
-    sync_lines: '{n} 行'
+    sync_lines: '{n} 行',
+    d_index_file: '檔案入庫',
+    d_remove_file: '踢出索引',
+    toast_kicked_out: '🗑 {n} 已踢出（{nodes} 節點、{edges} 邊），忽略規則已存。',
+    toast_indexed_file: '⚡ {n} 已入庫。還有 {pending} 個檔案待入庫。',
+    kickout_failed: '踢出失敗：{e}',
+    index_failed: '入庫失敗：{e}',
+    meta_indexed: '庫內：{n} 節點 · {e} 邊 · 建庫於 {at} · 磁碟 {size}',
+    meta_unindexed: '未入庫 · 磁碟 {size} · 修改於 {at}',
+    meta_missing: '磁碟上沒有此檔，索引內也沒有。',
+    tree_status: '{r} 個庫 · {n} 節點 · 已入庫 {f} 檔',
   }
 };
 
@@ -794,6 +846,78 @@ const EDGE_COLORS = {
 let Graph = null;
 let allProjectsList = [];
 let selectedProjects = new Set();
+
+// Mute = display quiet for not-in-index files (local display preference).
+// Rules (exclude/include) are managed silently alongside, never shown.
+function loadMutedMap() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('galaxy-muted-files') || '{}');
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  } catch (e) { /* corrupted save ignored */ }
+  return {};
+}
+function saveMutedMap(m) {
+  try { localStorage.setItem('galaxy-muted-files', JSON.stringify(m)); } catch (e) { /* ignore */ }
+}
+function isMuted(project, filePath) {
+  const m = loadMutedMap();
+  const arr = m[project];
+  return Array.isArray(arr) && arr.indexOf(filePath) !== -1;
+}
+function setMuted(project, filePath, muted) {
+  const m = loadMutedMap();
+  let arr = Array.isArray(m[project]) ? m[project] : [];
+  if (muted) {
+    if (arr.indexOf(filePath) === -1) arr.push(filePath);
+  } else {
+    arr = arr.filter(p => p !== filePath);
+  }
+  if (arr.length) m[project] = arr; else delete m[project];
+  saveMutedMap(m);
+}
+
+// Badge toggle: yellow<->gray. Rules follow the visible state silently:
+// mute ensures exclude (unless git already blocks), unmute drops it.
+async function toggleMute(project, filePath, known) {
+  if (!project || !filePath) return;
+  const entry = ((typeof currentSyncFiles !== 'undefined' && currentSyncFiles) || []).find(e => e.path === filePath);
+  const vcs = !!(known && known.vcsIgnored) || !!(entry && entry.vcsIgnored);
+  const ruled = !!(known && known.ignored) || !!(entry && entry.ignored);
+  const toMute = !isMuted(project, filePath);
+  try {
+    if (toMute) {
+      if (!vcs && !ruled) {
+        const res = await fetch('/api/project/exclusions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project, add: [filePath], remove: [] })
+        });
+        const data = await res.json();
+        if (!data.success) { alert(t('index_failed', { e: data.error || '' })); return; }
+      }
+      setMuted(project, filePath, true);
+      syncDesired.set(filePath, 'ignored');
+      selectedSyncFiles.delete(filePath);
+    } else {
+      const res = await fetch('/api/project/exclusions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, add: [], remove: [filePath] })
+      });
+      const data = await res.json();
+      if (!data.success) { alert(t('index_failed', { e: data.error || '' })); return; }
+      setMuted(project, filePath, false);
+      syncDesired.set(filePath, 'unindexed');
+    }
+    await refreshAfterIndexChange();
+    const modalEl = document.getElementById('syncReviewModal');
+    if (modalEl && modalEl.style.display === 'flex') {
+      await reloadSyncFileList(true);
+    }
+  } catch (err) {
+    alert(t('index_failed', { e: err.message }));
+  }
+}
 let currentLOD = 'arch';
 let rawData = { nodes: [], links: [], unindexed_by_project: {} };
 // Explorer tree source: full symbol list independent of the 3D LOD, so the
@@ -900,6 +1024,14 @@ function init3DGraph() {
       }
     });
 
+  // No-roll preference: the lib defaults to trackball controls, which bank
+  // camera.up on drag (measured 102°/126° tilts) — silently rotating the
+  // screen axes keyboard flight is computed against. Real orbit controls
+  // never roll. Either way the per-frame pin in flightStep enforces level.
+  try {
+    if (Graph && typeof Graph.controlType === 'function') Graph.controlType('orbit');
+  } catch (e) { /* trackball stays, pinned level per frame */ }
+
   window.addEventListener('resize', () => {
     if (!Graph) return;
     layoutGraphViewport();
@@ -962,6 +1094,7 @@ function layoutGraphViewport() {
 // Keyboard flight (WASD/arrows + QE, Shift boost; CyberControl-style feel)
 // ==========================================
 const flightKeys = new Set();
+let lastFlightRight = { x: 1, y: 0, z: 0 }; // pole fallback, see flightStep
 
 function flightIsTyping() {
   const el = document.activeElement;
@@ -1002,6 +1135,13 @@ function startFlightLoop() {
 }
 
 function flightStep() {
+  // Pin camera up every frame (even with no keys): trackball controls roll
+  // object.up on drag, and flight math assumes a level horizon — without
+  // this D/E skews with accumulated roll. Cheap, idempotent, guarded.
+  try {
+    const cam = (typeof Graph !== 'undefined' && Graph && typeof Graph.camera === 'function') ? Graph.camera() : null;
+    if (cam && cam.up && (cam.up.x !== 0 || cam.up.y !== 1 || cam.up.z !== 0)) cam.up.set(0, 1, 0);
+  } catch (e) { /* ignore */ }
   if (!flightKeys.size || typeof Graph === 'undefined' || !Graph || !Graph.cameraPosition) return false;
   const pos = Graph.cameraPosition();
   let tgt = { x: 0, y: 0, z: 0 };
@@ -1014,18 +1154,39 @@ function flightStep() {
   const fwd = { x: tgt.x - pos.x, y: tgt.y - pos.y, z: tgt.z - pos.z };
   const dist = Math.sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z) || 1;
   fwd.x /= dist; fwd.y /= dist; fwd.z /= dist;
-  const up = { x: 0, y: 1, z: 0 };
-  const right = {
-    x: fwd.y * up.z - fwd.z * up.y,
-    y: fwd.z * up.x - fwd.x * up.z,
-    z: fwd.x * up.y - fwd.y * up.x,
+  // Camera-relative basis (no-roll orbit): right is exact screen-right at
+  // any yaw/pitch once normalized — the old unnormalized cross product
+  // shrank with pitch (0.7x at 45 deg, ~0 looking straight down, so A/D
+  // died). Degenerate pole reuses the last good right.
+  const worldUp = { x: 0, y: 1, z: 0 };
+  let right = {
+    x: fwd.y * worldUp.z - fwd.z * worldUp.y,
+    y: fwd.z * worldUp.x - fwd.x * worldUp.z,
+    z: fwd.x * worldUp.y - fwd.y * worldUp.x,
   };
+  const rl = Math.sqrt(right.x * right.x + right.y * right.y + right.z * right.z);
+  if (rl > 1e-4) {
+    right.x /= rl; right.y /= rl; right.z /= rl;
+    lastFlightRight = { x: right.x, y: right.y, z: right.z };
+  } else {
+    right = { x: lastFlightRight.x, y: lastFlightRight.y, z: lastFlightRight.z };
+  }
+  // Lift is SCREEN-up (view-relative): worldUp minus its view-direction
+  // part, normalized. Level views: identical to world-+Y, nothing changes.
+  // Steep pitch: content moves exactly down-screen instead of receding —
+  // top-down +Y reads as zoom-out/backward, screen-up stays a pan.
+  // Degenerate pole falls back to world-+Y.
+  const along = fwd.x * worldUp.x + fwd.y * worldUp.y + fwd.z * worldUp.z;
+  let up = { x: worldUp.x - fwd.x * along, y: worldUp.y - fwd.y * along, z: worldUp.z - fwd.z * along };
+  const ul = Math.sqrt(up.x * up.x + up.y * up.y + up.z * up.z);
+  if (ul > 1e-4) { up.x /= ul; up.y /= ul; up.z /= ul; }
+  else { up = { x: worldUp.x, y: worldUp.y, z: worldUp.z }; }
   const speed = dist * 0.02 * (flightKeys.has('shift') ? 3.5 : 1);
   const o = flightOffset(fwd, right, up, flightKeys, speed);
   if (!o.x && !o.y && !o.z) return false;
   const newPos = { x: pos.x + o.x, y: pos.y + o.y, z: pos.z + o.z };
   const newLook = { x: tgt.x + o.x, y: tgt.y + o.y, z: tgt.z + o.z };
-  // lookAt follows: pure translation, no tilt (this is what makes Q/E truly vertical)
+  // lookAt follows: pure translation, no tilt (Q/E screen-up, A/D yaw-level, W/S view dolly)
   Graph.cameraPosition(newPos, newLook);
   try {
     const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
@@ -1356,14 +1517,14 @@ function toggleTreePanel() {
   btn.classList.toggle('active', !panel.classList.contains('collapsed'));
 }
 
-function countUnindexedInDir(dirObj) {
+function countIndexedInDir(dirObj) {
   if (!dirObj) return 0;
   let count = 0;
   for (const f of Object.values(dirObj.files || {})) {
-    if (f && f.is_unindexed) count++;
+    if (f && !f.is_unindexed) count++;
   }
   for (const d of Object.values(dirObj.dirs || {})) {
-    count += countUnindexedInDir(d);
+    count += countIndexedInDir(d);
   }
   return count;
 }
@@ -1461,10 +1622,19 @@ function buildProjectTree() {
   const readyProjects = allProjectsList.filter(p => p.status === 'ready');
   if (readyProjects.length === 0) {
     container.innerHTML = '<div style="font-size:11px; color:#8b949e; padding:8px;">No indexed repositories</div>';
+    const sb0 = document.getElementById('tree-statusbar');
+    if (sb0) sb0.innerText = t('tree_status', { r: 0, n: 0, f: 0 });
     return;
   }
 
   document.getElementById('lbl-proj-summary').innerText = t('active_summary', { n: selectedProjects.size });
+
+  const sbEl = document.getElementById('tree-statusbar');
+  if (sbEl) {
+    const totNodes = readyProjects.reduce((a, p) => a + (p.nodes || 0), 0);
+    const totIndexed = readyProjects.reduce((a, p) => a + ((p.indexed_files || []).length), 0);
+    sbEl.innerText = t('tree_status', { r: readyProjects.length, n: totNodes, f: totIndexed });
+  }
 
   // Build recursive directory structure for active nodes per project
   const projRoots = {};
@@ -1548,12 +1718,55 @@ function buildProjectTree() {
     });
   }
 
+  // Ingest rule-ignored + git-blocked rows: kept visible (gray/yellow),
+  // rules handled silently. allProjectsList already carries both lists.
+  const ingestExtraFiles = (projName, list, flags) => {
+    if (!projRoots[projName]) {
+      projRoots[projName] = { name: projName, dirs: {}, files: {} };
+    }
+    (list || []).forEach(fPath => {
+      const normPath = fPath.split(String.fromCharCode(92)).join('/').replace(/^\/+/, '');
+      const parts = normPath.split('/');
+      const fileName = parts.pop();
+      let currentDir = projRoots[projName];
+      let accumulatedPath = '';
+      parts.forEach(p => {
+        accumulatedPath = accumulatedPath ? `${accumulatedPath}/${p}` : p;
+        if (!currentDir.dirs[p]) {
+          currentDir.dirs[p] = {
+            name: p,
+            path: accumulatedPath,
+            dirs: {},
+            files: {}
+          };
+        }
+        currentDir = currentDir.dirs[p];
+      });
+      if (!currentDir.files[fileName]) {
+        currentDir.files[fileName] = {
+          name: fileName,
+          path: normPath,
+          symbols: [],
+          is_unindexed: true,
+          ...flags
+        };
+      } else {
+        Object.assign(currentDir.files[fileName], flags);
+      }
+    });
+  };
+  (allProjectsList || []).forEach(proj => {
+    if (!proj || proj.status !== 'ready') return;
+    ingestExtraFiles(proj.name, proj.rule_ignored, { is_ignored: true });
+    ingestExtraFiles(proj.name, proj.vcs_ignored, { is_vcs: true });
+  });
+
   // Render All Ready Project Roots
   readyProjects.forEach(proj => {
     const projName = proj.name;
     const isSelected = selectedProjects.has(projName);
     const projData = projRoots[projName] || { dirs: {}, files: {} };
-    const pendingCount = proj.pending_sync_count || (proj.unindexed_files ? proj.unindexed_files.length : 0);
+    const indexedCount = (proj.indexed_files || []).length;
 
     const projNodeEl = document.createElement('div');
     projNodeEl.className = 'tree-node';
@@ -1565,13 +1778,13 @@ function buildProjectTree() {
       <span class="tree-arrow ${isProjOpen ? 'open' : ''}">▸</span>
       <input type="checkbox" ${isSelected ? 'checked' : ''} title="Toggle project inclusion" />
       <span style="font-weight:600; color:#58a6ff;">📦 ${projName}</span>
-      ${pendingCount > 0 ? `<span class="sync-delta-badge" title="${t('pending_sync_tip')}">⚡ ${pendingCount}</span>` : ''}
-      <span class="node-kind-tag" style="margin-left:${pendingCount > 0 ? '4px' : 'auto'};">${isSelected ? 'active' : 'off'}</span>
+      <span class="sync-delta-badge" title="${t('indexed_count_tip', { n: indexedCount })}">⚡ ${indexedCount}</span>
+      <span class="node-kind-tag" style="margin-left:4px;">${isSelected ? 'active' : 'off'}</span>
     `;
 
-    const pendingBadgeEl = projNodeEl.querySelector('.sync-delta-badge');
-    if (pendingBadgeEl) {
-      pendingBadgeEl.onclick = (e) => {
+    const mgrBadgeEl = projNodeEl.querySelector('.sync-delta-badge');
+    if (mgrBadgeEl) {
+      mgrBadgeEl.onclick = (e) => {
         e.stopPropagation();
         openSyncReviewModal(projName);
       };
@@ -1678,7 +1891,7 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
   const dirNames = Object.keys(dirObj.dirs || {}).sort();
   dirNames.forEach(dName => {
     const subDir = dirObj.dirs[dName];
-    const unindexedCount = countUnindexedInDir(subDir);
+    const indexedCount = countIndexedInDir(subDir);
     const cleanSubPath = (subDir.path || '').split(String.fromCharCode(92)).join('/');
     const dirKey = `${projName}:${cleanSubPath}`;
     const isDirOpen = openDirs ? openDirs.has(dirKey) : false;
@@ -1690,7 +1903,7 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     dirNodeEl.innerHTML = `
       <span class="tree-arrow ${isDirOpen ? 'open' : ''}">▸</span>
       <span style="font-weight:500; color:#e6edf3;">📁 ${dName}</span>
-      ${unindexedCount > 0 ? `<span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('dir_unindexed_tip', { n: unindexedCount })}">⚡ ${unindexedCount}</span>` : ''}
+      <span class="sync-delta-badge" style="font-size:9px; padding:0 4px; margin-left:auto;" title="${t('indexed_count_tip', { n: indexedCount })}">⚡ ${indexedCount}</span>
     `;
 
     const deltaBadgeEl = dirNodeEl.querySelector('.sync-delta-badge');
@@ -1736,6 +1949,7 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     const cleanFilePath = (fileData.path || '').split(String.fromCharCode(92)).join('/');
     const fileKey = `${projName}:${cleanFilePath}`;
     const isFileOpen = openFiles ? openFiles.has(fileKey) : false;
+    const fileMuted = isUnindexed && isMuted(projName, cleanFilePath);
 
     const fileNode = isUnindexed ? {
       id: `${projName}:${cleanFilePath}`,
@@ -1745,7 +1959,9 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
       file_path: cleanFilePath,
       start_line: 1,
       end_line: 500,
-      is_unindexed: true
+      is_unindexed: true,
+      is_ignored: !!fileData.is_ignored,
+      is_vcs: !!fileData.is_vcs
     } : (symList.find(s => s.kind === 'file') || {
       id: `${projName}:${cleanFilePath}`,
       name: fName,
@@ -1762,11 +1978,26 @@ function renderDirContents(projName, dirObj, parentEl, openDirs, openFiles, sele
     if (isUnindexed) fileNodeEl.setAttribute('data-is-unindexed', 'true');
 
     if (isUnindexed) {
-      fileNodeEl.innerHTML = `
-        <span class="tree-arrow" style="visibility:hidden;">▸</span>
-        <span style="color:#d29922; font-weight:500;">📄 ${fName}</span>
-        <span class="node-kind-tag" style="background:#d2992222; color:#d29922; border:1px solid #d2992255;">UNINDEXED</span>
-      `;
+      if (fileMuted) {
+        fileNodeEl.innerHTML = `
+          <span class="tree-arrow" style="visibility:hidden;">▸</span>
+          <span style="color:#8b949e; font-weight:500;">📄 ${fName}</span>
+          <span class="node-kind-tag tree-mute-badge" style="background:#6e768122; color:#8b949e; border:1px solid #6e768155; cursor:pointer;" title="${t('sync_badge_toggle_tip')}">IGNORE</span>
+        `;
+      } else {
+        fileNodeEl.innerHTML = `
+          <span class="tree-arrow" style="visibility:hidden;">▸</span>
+          <span style="color:#d29922; font-weight:500;">📄 ${fName}</span>
+          <span class="node-kind-tag tree-mute-badge" style="background:#d2992222; color:#d29922; border:1px solid #d2992255; cursor:pointer;" title="${t('sync_badge_toggle_tip')}">UNINDEXED</span>
+        `;
+      }
+      const treeBadge = fileNodeEl.querySelector('.tree-mute-badge');
+      if (treeBadge) {
+        treeBadge.onclick = (e) => {
+          e.stopPropagation();
+          toggleMute(projName, cleanFilePath, { vcsIgnored: !!fileData.is_vcs, ignored: !!fileData.is_ignored });
+        };
+      }
     } else {
       fileNodeEl.innerHTML = `
         <span class="tree-arrow ${isFileOpen ? 'open' : ''}">▸</span>
@@ -2457,6 +2688,27 @@ function openDrawer(node) {
   badge.style.background = KIND_COLORS[node.kind] || '#1f6feb';
   badge.style.color = '#fff';
 
+  // File-manager actions: kick an indexed file out of the DB (stays on disk).
+  const kickable = !!(node && node.project && node.file_path && node.kind !== 'doc' && !node.is_unindexed);
+  const dActs = document.getElementById('d-actions');
+  if (dActs) dActs.style.display = kickable ? 'flex' : 'none';
+  const dIdx = document.getElementById('d-btn-index');
+  if (dIdx) dIdx.style.display = 'none';
+  const dRm = document.getElementById('d-btn-remove');
+  if (dRm) {
+    dRm.style.display = kickable ? '' : 'none';
+    const lblRm = document.getElementById('lbl-d-remove');
+    if (lblRm) lblRm.textContent = t('d_remove_file');
+    dRm.onclick = kickable ? () => kickOutFile(node.project, node.file_path) : null;
+  }
+
+  const dMeta = document.getElementById('d-meta');
+  if (kickable) {
+    loadFileMeta(node.project, node.file_path);
+  } else if (dMeta) {
+    dMeta.style.display = 'none';
+  }
+
   const absPath = node.abs_path || (node.file_path ? `${node.project_path || ''}/${node.file_path}` : '');
   const startLine = node.start_line || 1;
   const endLine = node.end_line || (node.kind === 'file' ? 1000 : startLine);
@@ -2560,6 +2812,21 @@ function openUnindexedFileDrawer(node) {
   badge.style.background = KIND_COLORS.unindexed_file;
   badge.style.color = '#fff';
 
+  // File-manager actions: index this physical file (scoped project sync).
+  const dActs = document.getElementById('d-actions');
+  if (dActs) dActs.style.display = 'flex';
+  const dRm = document.getElementById('d-btn-remove');
+  if (dRm) dRm.style.display = 'none';
+  const dIdx = document.getElementById('d-btn-index');
+  if (dIdx) {
+    dIdx.style.display = '';
+    const lblIdx = document.getElementById('lbl-d-index');
+    if (lblIdx) lblIdx.textContent = t('d_index_file');
+    dIdx.onclick = () => indexFile(node.project, node.file_path, node.is_vcs ? 'vcs' : 'rule');
+  }
+
+  loadFileMeta(node.project, node.file_path);
+
   const absPath = node.abs_path || (node.file_path ? `${node.project_path || ''}/${node.file_path}` : '');
   const encodedPath = encodeURIComponent(absPath.split(String.fromCharCode(92)).join('/'));
   document.getElementById('ide-antigravity').href = `vscode://file/${encodedPath}:1`;
@@ -2600,6 +2867,11 @@ function openDirDrawer(projName, dirPath, dirObj) {
   badge.innerText = 'DIRECTORY';
   badge.style.background = KIND_COLORS.directory;
   badge.style.color = '#fff';
+
+  const dActsDir = document.getElementById('d-actions');
+  if (dActsDir) dActsDir.style.display = 'none';
+  const dMetaDir = document.getElementById('d-meta');
+  if (dMetaDir) dMetaDir.style.display = 'none';
 
   document.getElementById('code-lines-badge').innerText = 'Directory Scope';
   
@@ -2644,12 +2916,17 @@ function openProjectDrawer(projName, projObj) {
   badge.style.background = KIND_COLORS.project;
   badge.style.color = '#fff';
 
+  const dActsProj = document.getElementById('d-actions');
+  if (dActsProj) dActsProj.style.display = 'none';
+  const dMetaProj = document.getElementById('d-meta');
+  if (dMetaProj) dMetaProj.style.display = 'none';
+
   document.getElementById('code-lines-badge').innerText = 'Project Scope';
   
   const projNodes = rawData.nodes.filter(n => n.project === projName);
-  const pendingCount = projObj && projObj.pending_sync_count ? projObj.pending_sync_count : 0;
+  const indexedCount = projObj && projObj.indexed_files ? projObj.indexed_files.length : 0;
   
-  document.getElementById('d-code').innerText = `// Project Repository Overview\n// Name: ${projName}\n// Directory: ${projObj ? projObj.path : 'N/A'}\n// Total Loaded Nodes: ${projNodes.length}\n// Pending Sync Files: ${pendingCount}\n\n// Tip: Click the pending badge to review and index unindexed files on disk.`;
+  document.getElementById('d-code').innerText = `// Project Repository Overview\n// Name: ${projName}\n// Directory: ${projObj ? projObj.path : 'N/A'}\n// Total Loaded Nodes: ${projNodes.length}\n// Indexed Files: ${indexedCount}\n\n// Tip: Click the count badge to open the indexing manager.`;
 
   document.getElementById('in-degree-count').innerText = '0';
   document.getElementById('out-degree-count').innerText = projNodes.length;
@@ -2835,13 +3112,24 @@ function loadProjects(isSilent = false) {
       const readyProjects = projects.filter(p => p.status === 'ready');
       
       if (selectedProjects.size === 0 && readyProjects.length > 0) {
-        if (readyProjects.length <= 3) {
-          readyProjects.forEach(p => selectedProjects.add(p.name));
-        } else {
-          const pref = readyProjects.find(p => p.name === 'RDLib') || readyProjects[0];
-          selectedProjects.add(pref.name);
-          const second = readyProjects.find(p => p.name === 'DeployGate' || p.name === 'RevenueApp');
-          if (second) selectedProjects.add(second.name);
+        let restored = false;
+        try {
+          const saved = JSON.parse(localStorage.getItem('galaxy-selected-projects') || 'null');
+          if (Array.isArray(saved)) {
+            restored = true;
+            const ready = new Set(readyProjects.map(p => p.name));
+            saved.filter(n => ready.has(n)).forEach(n => selectedProjects.add(n));
+          }
+        } catch (e) { /* corrupted save ignored */ }
+        if (!restored) {
+          if (readyProjects.length <= 3) {
+            readyProjects.forEach(p => selectedProjects.add(p.name));
+          } else {
+            const pref = readyProjects.find(p => p.name === 'RDLib') || readyProjects[0];
+            selectedProjects.add(pref.name);
+            const second = readyProjects.find(p => p.name === 'DeployGate' || p.name === 'RevenueApp');
+            if (second) selectedProjects.add(second.name);
+          }
         }
       }
       
@@ -2874,6 +3162,8 @@ function selectAllProjects(select) {
 
 function loadRootGraph(isSilent = false) {
   clearTempReveal();
+  // Every selection change funnels through here — persist for reload.
+  try { localStorage.setItem('galaxy-selected-projects', JSON.stringify(Array.from(selectedProjects))); } catch (e) { /* ignore */ }
   if (selectedProjects.size === 0) {
     rawData = { nodes: [], links: [], unindexed_by_project: {} };
     applyFilter(false);
@@ -2882,8 +3172,9 @@ function loadRootGraph(isSilent = false) {
   }
 
   const projParam = Array.from(selectedProjects).join(',');
-  const backendLOD = (currentLOD === 'custom' || currentLOD === 'all') ? 'all' : currentLOD;
-  fetch(`/api/graph?projects=${encodeURIComponent(projParam)}&lod=${backendLOD}`)
+  // Layering is frontend-only (hiddenKinds + tempRevealed): always fetch
+  // the full set so walk-up reveal works in every MODE.
+  fetch(`/api/graph?projects=${encodeURIComponent(projParam)}&lod=all`)
     .then(res => res.json())
     .then(data => {
       const nodes = data.nodes || [];
@@ -3030,7 +3321,6 @@ function loadManagerList() {
                 <button class="act-btn danger" onclick="uninitProject('${escapedPath}', '${p.name}')">${t('act_uninit')}</button>
               ` : `
                 <button class="act-btn green" onclick="initProject('${escapedPath}')">${t('act_init')}</button>
-                <button class="act-btn danger" onclick="excludeProject('${escapedPath}', '${p.name}')">${t('act_exclude')}</button>
               `}
             </div>
           </td>
@@ -3038,28 +3328,6 @@ function loadManagerList() {
         tbody.appendChild(tr);
       });
     });
-}
-
-function excludeProject(path, name) {
-  const confirmMsg = t('confirm_exclude', { name });
-  if (!confirm(confirmMsg)) return;
-
-  fetch('/api/project/exclude', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path })
-  })
-  .then(res => res.json())
-  .then(res => {
-    if (res.success) {
-      showToast(t('toast_exclude_done'));
-      selectedProjects.delete(name);
-      loadProjects();
-      loadManagerList();
-    } else {
-      alert('Failed to exclude project: ' + (res.error || ''));
-    }
-  });
 }
 
 function initProject(path) {
@@ -3212,15 +3480,30 @@ document.getElementById('btn-rotate').addEventListener('click', () => {
   isRotating = !isRotating;
   document.getElementById('btn-rotate').classList.toggle('highlight', isRotating);
   if (isRotating) {
-    let angle = 0;
-    const distance = 400;
+    // Orbit around the LIVE lookAt point (never yank it back to origin):
+    // angle/radius come from the current camera, so engaging rotation never
+    // teleports, and keyboard flight keeps working mid-rotation (both stay
+    // consistent — the old origin-yank is what skewed keys after rotating).
     window._rotateTimer = setInterval(() => {
-      if (!isRotating) { clearInterval(window._rotateTimer); return; }
-      angle += Math.PI / 600;
-      Graph.cameraPosition({
-        x: distance * Math.sin(angle),
-        z: distance * Math.cos(angle)
-      });
+      if (!isRotating || typeof Graph === 'undefined' || !Graph || !Graph.cameraPosition) { clearInterval(window._rotateTimer); return; }
+      try {
+        const pos = Graph.cameraPosition();
+        let cx = 0, cy = 0, cz = 0;
+        try {
+          const ctrl = (typeof Graph.controls === 'function') ? Graph.controls() : null;
+          if (ctrl && ctrl.target && isFinite(ctrl.target.x)) {
+            cx = ctrl.target.x; cy = ctrl.target.y; cz = ctrl.target.z;
+          }
+        } catch (e) { /* keep origin fallback */ }
+        const dx = (pos.x || 0) - cx, dz = (pos.z || 0) - cz;
+        const radius = Math.sqrt(dx * dx + dz * dz) || 400;
+        const angle = Math.atan2(dx, dz) + Math.PI / 600;
+        Graph.cameraPosition({
+          x: cx + radius * Math.sin(angle),
+          y: (pos.y !== undefined ? pos.y : cy),
+          z: cz + radius * Math.cos(angle)
+        }, { x: cx, y: cy, z: cz });
+      } catch (e) { /* never break the loop on a bad frame */ }
     }, 20);
   } else {
     clearInterval(window._rotateTimer);
@@ -4493,9 +4776,71 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // ==================== CodeGraph Sync & Review Modal Logic ====================
 let currentSyncProject = null;
+let currentSyncSubDir = null;
+// currentSyncFiles entries: { path, indexed }. selectedSyncFiles = desired
+// membership (checked = in index; apply reconciles both ways).
 let currentSyncFiles = [];
-let selectedSyncFiles = new Set();
+let selectedSyncFiles = new Set(); // derived: desired == 'indexed' (compat)
+let syncDesired = new Map(); // path -> 'indexed' | 'unindexed' | 'ignored'
+
+// Desired-state setter: single writer for seg control, select-all, VCS
+// helpers. Persists mute (ignored display) alongside; rule IO happens only
+// in apply (and toggleMute's immediate tree path).
+function setDesired(filePath, state) {
+  if (!filePath) return;
+  syncDesired.set(filePath, state);
+  if (state === 'indexed') selectedSyncFiles.add(filePath);
+  else selectedSyncFiles.delete(filePath);
+  if (state === 'ignored') setMuted(currentSyncProject, filePath, true);
+  else setMuted(currentSyncProject, filePath, false);
+}
 let activePreviewFile = null;
+
+// Indexing manager state: every source file with its membership.
+// indexed (checked) / pending (unchecked) / ignored (unchecked + ruled) /
+// vcs-ignored (unchecked + disabled: .gitignore blocks the CLI forever).
+function buildSyncFileState(proj) {
+  const indexed = (proj && proj.indexed_files) ? [...proj.indexed_files] : [];
+  const fresh = (proj && proj.unindexed_files) ? [...proj.unindexed_files] : [];
+  const ruled = (proj && proj.rule_ignored) ? [...proj.rule_ignored] : [];
+  const vcs = (proj && proj.vcs_ignored) ? [...proj.vcs_ignored] : [];
+  let idx = indexed, fr = fresh, ig = ruled, vc = vcs;
+  if (currentSyncSubDir) {
+    const normSub = normSlash(currentSyncSubDir).toLowerCase();
+    const inScope = (f) => normSlash(f).toLowerCase().startsWith(normSub);
+    idx = idx.filter(inScope);
+    fr = fr.filter(inScope);
+    ig = ig.filter(inScope);
+    vc = vc.filter(inScope);
+  }
+  const idxSet = new Set(idx.map(f => normSlash(f)));
+  const notIdx = (f) => !idxSet.has(normSlash(f));
+  const forcedSet = new Set(((proj && proj.vcs_forced) || []).map(f => normSlash(f)));
+  const projName = (proj && proj.name) || '';
+  // Backend lists are disjoint, but never render one path twice (first wins).
+  const seen = new Set(idxSet);
+  const uniq = (list) => list.filter(f => {
+    const k = normSlash(f);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const all = [
+    ...idx.map(f => ({ path: f, indexed: true, ignored: false, vcsIgnored: false, forced: forcedSet.has(normSlash(f)), muted: isMuted(projName, f) })),
+    ...uniq(fr.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: false, muted: isMuted(projName, f) })),
+    ...uniq(ig.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: true, vcsIgnored: false, muted: isMuted(projName, f) })),
+    ...uniq(vc.filter(notIdx)).map(f => ({ path: f, indexed: false, ignored: false, vcsIgnored: true, muted: isMuted(projName, f) }))
+  ];
+  all.sort((a, b) => a.path.localeCompare(b.path));
+  currentSyncFiles = all;
+  selectedSyncFiles = new Set(idx);
+  syncDesired = new Map();
+  for (const e of all) {
+    if (e.indexed) syncDesired.set(e.path, 'indexed');
+    else if (e.muted) syncDesired.set(e.path, 'ignored');
+    else syncDesired.set(e.path, 'unindexed');
+  }
+}
 
 function normSlash(s) {
   return (s || '').split(String.fromCharCode(92)).join('/');
@@ -4521,13 +4866,13 @@ function updateSyncModalI18n() {
   const searchEl = document.getElementById('syncModalSearch');
   if (searchEl) searchEl.placeholder = t('sync_search_ph');
   const selAllEl = document.getElementById('btn-sync-sel-all');
-  if (selAllEl) selAllEl.textContent = t('sync_sel_all');
+  if (selAllEl) { selAllEl.textContent = t('sync_sel_all'); selAllEl.title = t('sync_sel_all_tip'); }
   const selNoneEl = document.getElementById('btn-sync-sel-none');
-  if (selNoneEl) selNoneEl.textContent = t('sync_sel_none');
+  if (selNoneEl) { selNoneEl.textContent = t('sync_sel_none'); selNoneEl.title = t('sync_sel_none_tip'); }
+  const selMuteEl = document.getElementById('btn-sync-sel-mute');
+  if (selMuteEl) { selMuteEl.textContent = t('sync_sel_mute'); selMuteEl.title = t('sync_sel_mute_tip'); }
   const btnSyncEl = document.getElementById('lbl-btn-sync');
   if (btnSyncEl) btnSyncEl.textContent = t('sync_btn_sync');
-  const btnExcludeEl = document.getElementById('lbl-btn-exclude');
-  if (btnExcludeEl) btnExcludeEl.textContent = t('sync_btn_exclude');
   const emptyTipEl = document.getElementById('lbl-sync-code-empty');
   if (emptyTipEl) emptyTipEl.textContent = t('sync_code_empty_tip');
 }
@@ -4543,7 +4888,7 @@ window.openSyncReviewModal = async function(projName, targetSubDir) {
   const projBadge = document.getElementById('syncModalProjectBadge');
   if (projBadge) projBadge.textContent = projName;
 
-  // Always fetch latest project list to guarantee fresh unindexed_files list
+  // Always fetch latest project list to guarantee fresh file lists
   try {
     const res = await fetch('/api/projects');
     allProjectsList = await res.json();
@@ -4552,17 +4897,11 @@ window.openSyncReviewModal = async function(projName, targetSubDir) {
   }
 
   const proj = (allProjectsList || []).find(p => p.name === projName);
-  let files = (proj && proj.unindexed_files) ? [...proj.unindexed_files] : [];
-  
-  if (targetSubDir && typeof targetSubDir === 'string' && targetSubDir !== 'null' && targetSubDir !== 'undefined') {
-    const normSub = normSlash(targetSubDir).toLowerCase();
-    files = files.filter(f => normSlash(f).toLowerCase().startsWith(normSub));
-  }
+  currentSyncSubDir = (typeof targetSubDir === 'string' && targetSubDir !== 'null' && targetSubDir !== 'undefined') ? targetSubDir : null;
+  buildSyncFileState(proj);
 
-  console.log('Found unindexed files:', files.length, 'for', projName);
-  currentSyncFiles = files;
-  selectedSyncFiles = new Set(files);
-  activePreviewFile = files.length > 0 ? files[0] : null;
+  console.log('Indexing manager:', currentSyncFiles.length, 'files for', projName);
+  activePreviewFile = currentSyncFiles.length > 0 ? currentSyncFiles[0].path : null;
 
   window.renderSyncFileList();
   if (activePreviewFile) {
@@ -4583,13 +4922,25 @@ window.closeSyncReviewModal = function() {
   }
 };
 
+function segBtnStyle(active, color) {
+  return `padding:3px 9px; font-size:0.72rem; border-radius:5px; cursor:pointer; border:1px solid ${active ? color : '#30363d'}; background:${active ? color + '26' : '#21262d'}; color:${active ? color : '#8b949e'}; font-weight:${active ? '600' : '400'};`;
+}
+
+function paintSeg(rowEl, active) {
+  rowEl.querySelectorAll('.seg-ctl button').forEach(b => {
+    const seg = b.getAttribute('data-seg');
+    const color = seg === 'indexed' ? '#3fb950' : seg === 'unindexed' ? '#d29922' : '#8b949e';
+    b.style.cssText = segBtnStyle(seg === active, color);
+  });
+}
+
 window.renderSyncFileList = function() {
   const listEl = document.getElementById('syncFileList');
   const searchVal = (document.getElementById('syncModalSearch')?.value || '').trim().toLowerCase();
   if (!listEl) return;
 
   listEl.innerHTML = '';
-  const filtered = currentSyncFiles.filter(f => !searchVal || f.toLowerCase().includes(searchVal));
+  const filtered = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
 
   if (filtered.length === 0) {
     listEl.innerHTML = `
@@ -4597,12 +4948,18 @@ window.renderSyncFileList = function() {
         ${currentSyncFiles.length === 0 ? t('sync_no_unindexed') : t('sync_no_match')}
       </div>
     `;
-    updateSyncCountText();
+    updateSyncDiffText();
     return;
   }
 
-  filtered.forEach(filePath => {
-    const isChecked = selectedSyncFiles.has(filePath);
+  filtered.forEach(entry => {
+    const filePath = entry.path;
+    const rowIndexed = !!entry.indexed;
+    const rowIgnored = !!entry.ignored;
+    const rowVcs = !!entry.vcsIgnored;
+    const rowForced = !!entry.forced;
+    const rowMuted = !!entry.muted && !rowIndexed;
+    const desiredState = syncDesired.get(filePath) || 'unindexed';
     const isActive = activePreviewFile === filePath;
     const icon = getSyncFileIcon(filePath);
     const normPath = normSlash(filePath);
@@ -4626,26 +4983,43 @@ window.renderSyncFileList = function() {
     row.onmouseover = () => { if (!isActive) row.style.background = 'rgba(255,255,255,0.04)'; };
     row.onmouseout = () => { if (!isActive) row.style.background = 'transparent'; };
 
+    // Badge truth table: green in index, gray muted, yellow attention.
+    // Rule/include/git mechanics stay invisible by design.
+    let bBg = 'rgba(210,153,34,0.15)', bFg = '#d29922', bBd = 'rgba(210,153,34,0.3)';
+    let bTx = t('sync_status_unindexed');
+    if (rowIndexed) { bBg = 'rgba(35,134,54,0.15)'; bFg = '#3fb950'; bBd = 'rgba(35,134,54,0.3)'; bTx = t('sync_status_indexed'); }
+    if (rowMuted) { bBg = 'rgba(110,118,129,0.15)'; bFg = '#8b949e'; bBd = 'rgba(110,118,129,0.3)'; bTx = t('sync_status_ignored'); }
     row.innerHTML = `
-      <input type="checkbox" ${isChecked ? 'checked' : ''} style="cursor: pointer;" />
+      <div class="seg-ctl" style="display:flex; gap:4px; flex-shrink:0;">
+        <button data-seg="indexed" title="${t('seg_indexed_tip')}" style="${segBtnStyle(desiredState === 'indexed', '#3fb950')}">${t('seg_indexed')}</button>
+        <button data-seg="unindexed" title="${t('seg_pending_tip')}" style="${segBtnStyle(desiredState === 'unindexed', '#d29922')}">${t('seg_pending')}</button>
+        <button data-seg="ignored" title="${t('seg_ignored_tip')}" style="${segBtnStyle(desiredState === 'ignored', '#8b949e')}">${t('seg_ignored')}</button>
+      </div>
       <span style="font-size: 1rem;">${icon}</span>
       <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
         <span style="color: ${isActive ? '#58a6ff' : '#c9d1d9'}; font-weight: 500; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${fileName}</span>
         ${dirPath ? `<span style="color: #6e7681; font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${dirPath}</span>` : ''}
       </div>
-      <span style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: rgba(210,153,34,0.15); color: #d29922; border: 1px solid rgba(210,153,34,0.3); flex-shrink: 0;">${t('sync_status_unindexed')}</span>
+      <span class="sync-state-badge" style="font-size: 0.68rem; padding: 1px 6px; border-radius: 8px; background: ${bBg}; color: ${bFg}; border: 1px solid ${bBd}; flex-shrink: 0; cursor: pointer;" title="${t('sync_badge_toggle_tip')}">${bTx}</span>
     `;
 
-    const chk = row.querySelector('input[type="checkbox"]');
-    chk.onclick = (e) => {
-      e.stopPropagation();
-      if (chk.checked) {
-        selectedSyncFiles.add(filePath);
-      } else {
-        selectedSyncFiles.delete(filePath);
-      }
-      updateSyncCountText();
-    };
+    row.querySelectorAll('.seg-ctl button').forEach(btn => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const want = btn.getAttribute('data-seg');
+        setDesired(filePath, want);
+        paintSeg(row, want);
+        updateSyncDiffText();
+      };
+    });
+
+    const stateBadge = row.querySelector('.sync-state-badge');
+    if (stateBadge) {
+      stateBadge.onclick = (e) => {
+        e.stopPropagation();
+        toggleMute(currentSyncProject, filePath);
+      };
+    }
 
     row.onclick = () => {
       activePreviewFile = filePath;
@@ -4656,7 +5030,7 @@ window.renderSyncFileList = function() {
     listEl.appendChild(row);
   });
 
-  updateSyncCountText();
+  updateSyncDiffText();
 };
 
 window.filterSyncFileList = function() {
@@ -4665,21 +5039,42 @@ window.filterSyncFileList = function() {
 
 window.toggleAllSyncFiles = function(select) {
   const searchVal = (document.getElementById('syncModalSearch')?.value || '').trim().toLowerCase();
-  const visibleFiles = currentSyncFiles.filter(f => !searchVal || f.toLowerCase().includes(searchVal));
+  const visibleFiles = currentSyncFiles.filter(e => !searchVal || e.path.toLowerCase().includes(searchVal));
+  const target = select === 'ignored' ? 'ignored' : select ? 'indexed' : 'unindexed';
   
-  visibleFiles.forEach(f => {
-    if (select) selectedSyncFiles.add(f);
-    else selectedSyncFiles.delete(f);
+  visibleFiles.forEach(e => {
+    setDesired(e.path, target);
   });
 
   window.renderSyncFileList();
 };
 
-function updateSyncCountText() {
+function updateSyncDiffText() {
   const countEl = document.getElementById('syncSelectionCount');
   if (countEl) {
-    countEl.textContent = t('sync_sel_count', { n: selectedSyncFiles.size, total: currentSyncFiles.length });
+    const d = planIndexing();
+    countEl.textContent = t('sync_desired_diff', { i: d.idx.length, m: d.kicks.length, k: d.mutes.length, total: currentSyncFiles.length });
   }
+}
+
+// Desired-vs-current plan: pure data, no IO. Apply executes it in order:
+// exclusions (rules+kick), includes (force+kick), soft kicks, scoped sync.
+function planIndexing() {
+  const idx = [], soft = [], ign = [], unr = [], frc = [], unfr = [], mutes = [], kicks = [];
+  for (const e of currentSyncFiles) {
+    const want = syncDesired.get(e.path) || 'unindexed';
+    const wasMuted = !!(e.muted) && !e.indexed;
+    if (want === 'indexed' && !e.indexed) idx.push(e.path);
+    if (want === 'indexed' && e.ignored) unr.push(e.path);
+    if (want === 'indexed' && e.vcsIgnored && !e.indexed) frc.push(e.path);
+    if (want === 'unindexed' && e.indexed && !e.forced) soft.push(e.path);
+    if (want === 'unindexed' && e.forced) unfr.push(e.path);
+    if (want === 'ignored' && !e.ignored && !e.vcsIgnored) ign.push(e.path);
+    if (want === 'ignored' && !e.indexed && !wasMuted) mutes.push(e.path);
+    if (want !== 'indexed' && e.indexed) kicks.push(e.path);
+  }
+  const ded = (a) => [...new Set(a)];
+  return { idx: ded(idx), soft: ded(soft), ign: ded(ign), unr: ded(unr), frc: ded(frc), unfr: ded(unfr), mutes: ded(mutes), kicks: ded(kicks) };
 }
 
 function resetSyncCodeViewer() {
@@ -4713,9 +5108,33 @@ window.selectSyncFileForPreview = async function(filePath) {
   if (iconEl) iconEl.textContent = getSyncFileIcon(filePath);
   if (badgeEl) {
     badgeEl.style.display = 'inline-block';
-    badgeEl.textContent = t('sync_status_unindexed');
+    const ent = (currentSyncFiles || []).find(e => e.path === filePath);
+    const entMuted = !!(ent && ent.muted) && !(ent && ent.indexed);
+    badgeEl.textContent = (ent && ent.indexed) ? t('sync_status_indexed') : entMuted ? t('sync_status_ignored') : t('sync_status_unindexed');
   }
   if (actionsEl) actionsEl.style.display = 'flex';
+  // VCS choice: git-blocked files get two honest doors (un-ignore edits
+  // version control; force touches only the index). Hidden otherwise.
+  const vcsChoice = document.getElementById('syncVcsChoice');
+  const vcsEnt = (currentSyncFiles || []).find(e => e.path === filePath);
+  const showChoice = !!(vcsEnt && vcsEnt.vcsIgnored && !vcsEnt.indexed);
+  if (vcsChoice) {
+    vcsChoice.style.display = showChoice ? 'block' : 'none';
+    if (showChoice) {
+      const lbl = document.getElementById('lbl-sync-vcs-text');
+      if (lbl) lbl.textContent = t('sync_vcs_choice_text');
+      const bU = document.getElementById('syncVcsUnignore');
+      if (bU) {
+        bU.textContent = t('sync_vcs_unignore');
+        bU.onclick = () => unignoreVcsFile(currentSyncProject, filePath);
+      }
+      const bF = document.getElementById('syncVcsForce');
+      if (bF) {
+        bF.textContent = t('sync_vcs_force');
+        bF.onclick = () => forceIndexVcsFile(currentSyncProject, filePath);
+      }
+    }
+  }
   if (contentEl) {
     contentEl.innerHTML = `<div style="color: #8b949e; padding: 20px;">${t('sync_loading')}</div>`;
   }
@@ -4756,8 +5175,212 @@ window.openSyncFileInIDE = function(ideType) {
   }
 };
 
-window.executeSyncSelected = async function() {
+// ==========================================
+// File-manager actions: direct per-file index management
+// ==========================================
+function refreshAfterIndexChange() {
+  return fetch('/api/projects')
+    .then(res => res.json())
+    .then(projs => {
+      allProjectsList = projs;
+      loadRootGraph();
+      if (typeof loadManagerList === 'function') {
+        try { loadManagerList(); } catch (e) { /* ignore */ }
+      }
+    })
+    .catch(() => { /* keep last good state */ });
+}
+
+window.kickOutFile = async function(project, filePath) {
+  if (!project || !filePath) return;
+  try {
+    const res = await fetch('/api/file/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, file_path: filePath })
+    });
+    const data = await res.json();
+    if (data.success) {
+      const r = data.removed || {};
+      showToast(t('toast_kicked_out', { n: filePath, nodes: r.nodes || 0, edges: r.edges || 0 }));
+      if (data.rule_error) alert(t('rule_save_failed', { e: data.rule_error }));
+      setMuted(project, filePath, false);  // kicked files show yellow
+      closeDrawer();
+      await refreshAfterIndexChange();
+    } else {
+      alert(t('kickout_failed', { e: data.error || '' }));
+    }
+  } catch (err) {
+    alert(t('kickout_failed', { e: err.message }));
+  }
+};
+
+window.indexFile = async function(project, filePath, via) {
+  if (!project || !filePath) return;
+  try {
+    if (via === 'vcs') {
+      // Git-blocked: force via include gate, sync takes it.
+      const inRes = await fetch('/api/project/includes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, add: [filePath], remove: [] })
+      });
+      const inData = await inRes.json();
+      if (!inData.success) {
+        alert(t('rule_save_failed', { e: inData.error || '' }));
+        return;
+      }
+    } else {
+      // Ruled files are skipped by sync: lift the rule first, then index.
+      // Plain pending files: no-op remove, then sync.
+      const unRes = await fetch('/api/project/exclusions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, add: [], remove: [filePath] })
+      });
+      const unData = await unRes.json();
+      if (!unData.success) {
+        alert(t('rule_save_failed', { e: unData.error || '' }));
+        return;
+      }
+    }
+    const res = await fetch('/api/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project })
+    });
+    const data = await res.json();
+    const per = data[project];
+    if (per && per.success) {
+      const m = per.metrics ? per.metrics.after : null;
+      showToast(t('toast_indexed_file', { n: filePath, pending: m ? m.pending : '?' }));
+      await refreshAfterIndexChange();
+    } else {
+      alert(t('index_failed', { e: (per && per.error) || data.error || '' }));
+    }
+  } catch (err) {
+    alert(t('index_failed', { e: err.message }));
+  }
+};
+
+function fmtBytes(b) {
+  if (b === null || b === undefined) return '?';
+  if (b < 1024) return `${b} B`;
+  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / 1048576).toFixed(1)} MB`;
+}
+
+function fmtTime(ts) {
+  if (!ts) return '?';
+  try { return new Date(ts * 1000).toLocaleString(); } catch (e) { return '?'; }
+}
+
+// Detail pane: disk truth + index truth side by side (best-effort).
+function loadFileMeta(project, filePath) {
+  const metaEl = document.getElementById('d-meta');
+  if (!metaEl) return;
+  metaEl.style.display = 'none';
+  metaEl.innerText = '';
+  if (!project || !filePath) return;
+  fetch(`/api/file/info?project=${encodeURIComponent(project)}&file_path=${encodeURIComponent(filePath)}`)
+    .then(res => res.json())
+    .then(d => {
+      if (!d || !d.success) return;
+      if (d.in_index) {
+        const rec = d.record || {};
+        metaEl.innerText = t('meta_indexed', {
+          n: (d.live && d.live.nodes) || 0, e: (d.live && d.live.edges) || 0,
+          at: fmtTime(rec.indexed_at),
+          size: fmtBytes(d.disk ? d.disk.size : rec.size)
+        });
+      } else if (d.exists_on_disk) {
+        metaEl.innerText = t('meta_unindexed', {
+          size: fmtBytes(d.disk ? d.disk.size : null),
+          at: fmtTime(d.disk ? d.disk.mtime : null)
+        });
+      } else {
+        metaEl.innerText = t('meta_missing');
+      }
+      metaEl.style.display = 'block';
+    })
+    .catch(() => { /* meta is best-effort */ });
+}
+
+async function reloadSyncFileList(keepChecks = false) {
+  const keep = keepChecks ? new Set(selectedSyncFiles) : null;
+  const keepWant = keepChecks ? new Map(syncDesired) : null;
+  try {
+    const projRes = await fetch('/api/projects');
+    allProjectsList = await projRes.json();
+  } catch (e) { /* keep last good list */ }
+  const proj = (allProjectsList || []).find(p => p.name === currentSyncProject);
+  buildSyncFileState(proj);
+  if (keep) {
+    selectedSyncFiles = new Set([...keep].filter(p => currentSyncFiles.some(e => e.path === p)));
+    for (const [p, s] of keepWant) {
+      if (currentSyncFiles.some(e => e.path === p)) syncDesired.set(p, s);
+    }
+  }
+  window.renderSyncFileList();
+  if (activePreviewFile && currentSyncFiles.some(e => e.path === activePreviewFile)) {
+    window.selectSyncFileForPreview(activePreviewFile);
+  } else if (currentSyncFiles.length) {
+    activePreviewFile = currentSyncFiles[0].path;
+    window.selectSyncFileForPreview(activePreviewFile);
+  } else {
+    activePreviewFile = null;
+    resetSyncCodeViewer();
+  }
+}
+
+window.unignoreVcsFile = async function(project, filePath) {
+  if (!project || !filePath) return;
+  if (!confirm(t('sync_vcs_unignore_confirm', { n: filePath }))) return;
+  try {
+    const res = await fetch('/api/project/gitignore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, unignore: [filePath] })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert(t('index_failed', { e: data.error || '' }));
+      return;
+    }
+    const blocked = data.still_blocked || [];
+    if (blocked.length > 0) {
+      alert(t('sync_vcs_still_blocked', { n: filePath, s: blocked[0].source || '' }));
+      return;
+    }
+    showToast(t('sync_vcs_unignored', { n: filePath }));
+    await reloadSyncFileList();
+    setDesired(filePath, 'indexed');
+    window.renderSyncFileList();
+  } catch (err) {
+    alert(t('index_failed', { e: err.message }));
+  }
+};
+
+window.forceIndexVcsFile = async function(project, filePath) {
+  if (!project || !filePath) return;
+  setDesired(filePath, 'indexed');
+  window.renderSyncFileList();
+  await window.applyIndexing();
+};
+
+// Indexing manager apply: rules first (official gate + instant kick),
+// then scoped sync (CLI skips ruled files natively, indexes the rest).
+window.applyIndexing = async function() {
   if (!currentSyncProject) return;
+  const plan = planIndexing();
+  if (plan.idx.length === 0 && plan.soft.length === 0 && plan.ign.length === 0 && plan.unr.length === 0 && plan.frc.length === 0 && plan.unfr.length === 0) {
+    showToast(t('sync_nothing_to_do'));
+    return;
+  }
+  // Pure index-new-files goes straight through; anything dropping rows or
+  // touching codegraph.json rules asks first.
+  const noisy = plan.soft.length + plan.ign.length + plan.unr.length + plan.frc.length + plan.unfr.length;
+  if (noisy > 0 && !confirm(t('sync_apply_confirm', { i: plan.idx.length, m: plan.kicks.length, k: plan.mutes.length }))) return;
   const btn = document.getElementById('btnSyncSelected');
   const originalText = btn ? btn.innerHTML : '';
   if (btn) {
@@ -4766,24 +5389,54 @@ window.executeSyncSelected = async function() {
   }
 
   try {
-    const res = await fetch('/api/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projects: [currentSyncProject] })
-    });
-    const data = await res.json();
-    const result = data[currentSyncProject];
-    if (result && result.success) {
-      showToast(t('sync_success_toast', { proj: currentSyncProject }));
-      window.closeSyncReviewModal();
-      const projRes = await fetch('/api/projects');
-      allProjectsList = await projRes.json();
-      loadRootGraph();
-    } else {
-      alert(`Indexing issue: ${result?.error || result?.output || 'Check logs'}`);
+    let added = 0, resolved = 0, rfiles = 0;
+    if (plan.ign.length > 0 || plan.unr.length > 0 || plan.soft.length > 0) {
+      const res = await fetch('/api/project/exclusions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject, add: plan.ign, remove: [...plan.unr, ...plan.soft] })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'exclusions failed');
+      rfiles += (data.kicked && data.kicked.files) || 0;
     }
+    if (plan.frc.length > 0 || plan.unfr.length > 0) {
+      const resI = await fetch('/api/project/includes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject, add: plan.frc, remove: plan.unfr })
+      });
+      const dataI = await resI.json();
+      if (!dataI.success) throw new Error(dataI.error || 'includes failed');
+      rfiles += (dataI.kicked && dataI.kicked.files) || 0;
+    }
+    for (const fp of plan.soft) {
+      const resS = await fetch('/api/file/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject, file_path: fp, rule: false })
+      });
+      const dataS = await resS.json();
+      if (!dataS.success) throw new Error(dataS.error || ('remove failed: ' + fp));
+      rfiles += ((dataS.removed && dataS.removed.files) || 0);
+    }
+    if (plan.idx.length > 0) {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: currentSyncProject })
+      });
+      const data = await res.json();
+      const per = data[currentSyncProject];
+      if (!per || !per.success) throw new Error((per && per.error) || 'sync failed');
+      added = (per.metrics && per.metrics.nodes_added) || 0;
+      resolved = (per.metrics && per.metrics.pending_resolved) || 0;
+    }
+    showToast(t('sync_apply_toast', { added, resolved, rfiles, k: plan.mutes.length }));
+    loadRootGraph();
+    await reloadSyncFileList();
   } catch (err) {
-    alert(`Indexing error: ${err.message}`);
+    alert(t('index_failed', { e: err.message }));
   } finally {
     if (btn) {
       btn.disabled = false;
@@ -4791,48 +5444,5 @@ window.executeSyncSelected = async function() {
     }
   }
 };
-
-window.executeExcludeSelected = async function() {
-  if (!currentSyncProject || selectedSyncFiles.size === 0) {
-    alert('Please select files to exclude.');
-    return;
-  }
-
-  const proj = (allProjectsList || []).find(p => p.name === currentSyncProject);
-  const projRoot = proj ? proj.path : '';
-  const pathsToExclude = Array.from(selectedSyncFiles).map(f => {
-    return projRoot ? normSlash(`${projRoot}/${f}`) : f;
-  });
-
-  if (!confirm(t('sync_exclude_confirm', { n: pathsToExclude.length }))) {
-    return;
-  }
-
-  const btn = document.getElementById('btnExcludeSelected');
-  if (btn) btn.disabled = true;
-
-  try {
-    const res = await fetch('/api/project/exclude', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paths: pathsToExclude })
-    });
-    const data = await res.json();
-    if (data.success) {
-      showToast(t('sync_exclude_toast', { n: pathsToExclude.length }));
-      window.closeSyncReviewModal();
-      const projRes = await fetch('/api/projects');
-      allProjectsList = await projRes.json();
-      loadRootGraph();
-    } else {
-      alert(`Exclude failed: ${data.error || 'Unknown error'}`);
-    }
-  } catch (err) {
-    alert(`Exclude error: ${err.message}`);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-};
-
 
 document.addEventListener('click', handleCodeReferenceClick);

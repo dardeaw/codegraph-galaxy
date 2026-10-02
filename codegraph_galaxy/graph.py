@@ -11,10 +11,14 @@ def fetch_project_graph(
     db_path: str,
     proj_name: str,
     repo_path: str,
-    lod: str = "standard",
     parent_id: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Fetch nodes and links for a given repository database according to LOD settings."""
+    """Fetch all nodes and links for a repository database.
+
+    Layering lives frontend-only now (hiddenKinds + tempRevealed): the
+    backend always serves the full node set so walk-up reveal works in
+    every MODE. Old lod-based SQL filters deleted.
+    """
     nodes: List[Dict[str, Any]] = []
     links: List[Dict[str, Any]] = []
 
@@ -40,13 +44,8 @@ def fetch_project_graph(
                     WHERE id = ? OR file_path = ?
                 """, (parent_id, parent_id))
             nodes_rows = cur.fetchall()
-        elif lod == "arch":
-            cur.execute("SELECT * FROM nodes WHERE kind IN ('file', 'class', 'interface', 'namespace')")
-            nodes_rows = cur.fetchall()
-        elif lod == "standard":
-            cur.execute("SELECT * FROM nodes WHERE kind IN ('file', 'class', 'interface', 'function', 'method', 'route')")
-            nodes_rows = cur.fetchall()
         else:
+            # Full set, every kind: frontend hiddenKinds does the layering.
             cur.execute("SELECT * FROM nodes")
             nodes_rows = cur.fetchall()
 
@@ -102,12 +101,12 @@ def _FnDocStem(str_name: str) -> str:
 def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
                      nodes: List[Dict[str, Any]], links: List[Dict[str, Any]],
                      loaded_node_ids: set) -> None:
-    """Merge markdown docs as first-class graph citizens (overview loads only).
+    """Merge docs as first-class graph citizens (overview loads only).
 
-    codegraph CLI never indexes .md, so docs are synthesized here: one `doc`
-    node per markdown file. Edges are earned, not blanket-connected:
-    same-stem match (Chart.md <-> Chart.ts) or the doc body mentioning the
-    module stem. Unrelated co-location creates no edge.
+    codegraph CLI never indexes .md/.json/.html, so docs are synthesized
+    here: one `doc` node per doc file. Edges are earned, not blanket-
+    connected: same-stem match (Chart.md <-> Chart.ts) or the doc body
+    mentioning the module stem. Unrelated co-location creates no edge.
     """
     try:
         v_docs = docs_lib.FnListDocs(repo_path)
@@ -167,6 +166,140 @@ def _FnMergeDocNodes(proj_name: str, repo_path: str, cur: Any,
                     "cross_project": False
                 })
     _FnLinkDocToDoc(proj_name, repo_path, nodes, links, loaded_node_ids)
+
+
+def FnRemoveIndexedFile(db_path: str, repo_path: str,
+                        rel_path: str) -> Dict[str, Any]:
+    """Delete one indexed file's rows (delegates to the batch version)."""
+    res = FnRemoveIndexedFiles(db_path, repo_path, [rel_path])
+    return {"files": res["files"], "nodes": res["nodes"],
+            "edges": res["edges"], "refs": res["refs"]}
+
+
+def FnRemoveIndexedFiles(db_path: str, repo_path: str,
+                         rel_paths: List[str]) -> Dict[str, Any]:
+    """Batch kick-out in ONE transaction (one lock hold, one commit).
+
+    Removes each file's nodes (FTS follows via nodes_ad trigger), attached
+    edges, files-table record, and unresolved_refs, then cleans orphaned
+    name_segment_vocab entries. Files stay on disk and reappear as pending.
+    Returns totals plus per-file counts. Raises on DB errors (lock/timeout)
+    so callers fail LOUDLY instead of reporting fake zeros.
+    """
+    normed: List[str] = []
+    for r in rel_paths or []:
+        n = (r or "").replace("\\", "/").strip("/")
+        if n and n != ".." and not n.startswith("../") and n not in normed:
+            normed.append(n)
+    totals: Dict[str, Any] = {
+        "files": 0, "nodes": 0, "edges": 0, "refs": 0, "paths": []}
+    if not normed:
+        return totals
+    # Busy timeout: CLI sync runs in its own process; wait out its write
+    # locks instead of failing instantly on "database is locked".
+    conn = sqlite3.connect(db_path, timeout=30)
+    try:
+        cur = conn.cursor()
+        for rel in normed:
+            rows = cur.execute(
+                "SELECT id FROM nodes WHERE file_path = ?",
+                (rel,)).fetchall()
+            v_ids = [x[0] for x in rows]
+            n_edges = n_nodes = 0
+            if v_ids:
+                ph = ",".join("?" * len(v_ids))
+                n_edges = cur.execute(
+                    f"DELETE FROM edges WHERE source IN ({ph}) OR target IN ({ph})",
+                    (*v_ids, *v_ids)).rowcount or 0
+                n_nodes = cur.execute(
+                    f"DELETE FROM nodes WHERE id IN ({ph})",
+                    (*v_ids,)).rowcount or 0
+            n_files = cur.execute(
+                "DELETE FROM files WHERE path = ?",
+                (rel,)).rowcount or 0
+            n_refs = cur.execute(
+                "DELETE FROM unresolved_refs WHERE file_path = ?",
+                (rel,)).rowcount or 0
+            totals["files"] += n_files
+            totals["nodes"] += n_nodes
+            totals["edges"] += n_edges
+            totals["refs"] += n_refs
+            totals["paths"].append({
+                "file_path": rel, "files": n_files, "nodes": n_nodes,
+                "edges": n_edges, "refs": n_refs})
+        try:
+            cur.execute(
+                "DELETE FROM name_segment_vocab WHERE name NOT IN "
+                "(SELECT DISTINCT name FROM nodes)")
+        except Exception:
+            pass  # older schema without vocab table
+        conn.commit()
+    finally:
+        conn.close()
+    return totals
+
+
+def FnFileInfo(db_path: str, repo_path: str,
+               rel_path: str) -> Dict[str, Any]:
+    """Read-only physical record: disk stat + files-table row + live counts.
+
+    Lets the file manager show disk truth and index truth side by side.
+    Never throws, never writes (read-only connection).
+    """
+    norm_rel = (rel_path or "").replace("\\", "/").strip("/")
+    info: Dict[str, Any] = {
+        "file_path": norm_rel, "exists_on_disk": False, "disk": None,
+        "in_index": False, "record": None,
+        "live": {"nodes": 0, "edges": 0},
+    }
+    if not norm_rel or norm_rel == ".." or norm_rel.startswith("../"):
+        return info
+    abs_repo = os.path.abspath(repo_path)
+    abs_file = os.path.abspath(os.path.join(abs_repo, norm_rel))
+    try:
+        if os.path.commonpath([abs_repo, abs_file]) != abs_repo:
+            return info
+    except Exception:
+        return info
+    if os.path.isfile(abs_file):
+        try:
+            st = os.stat(abs_file)
+            info["exists_on_disk"] = True
+            info["disk"] = {"size": st.st_size, "mtime": int(st.st_mtime)}
+        except Exception:
+            pass
+    if not db_path or not os.path.exists(db_path):
+        return info
+    try:
+        conn = sqlite3.connect("file:" + db_path + "?mode=ro", uri=True)
+        try:
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT path, content_hash, language, size, modified_at, "
+                "indexed_at, node_count, generated, errors FROM files "
+                "WHERE path = ?", (norm_rel,)).fetchone()
+            if row:
+                keys = ("path", "content_hash", "language", "size",
+                        "modified_at", "indexed_at", "node_count",
+                        "generated", "errors")
+                info["record"] = dict(zip(keys, row))
+                info["in_index"] = True
+            ids = [r[0] for r in cur.execute(
+                "SELECT id FROM nodes WHERE file_path = ?",
+                (norm_rel,)).fetchall()]
+            if ids:
+                info["in_index"] = True
+                ph = ",".join("?" * len(ids))
+                n_edges = cur.execute(
+                    f"SELECT COUNT(*) FROM edges WHERE source IN ({ph}) "
+                    f"OR target IN ({ph})",
+                    (*ids, *ids)).fetchone()[0]
+                info["live"] = {"nodes": len(ids), "edges": n_edges}
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    return info
 
 
 def _FnLinkDocToDoc(proj_name: str, repo_path: str,

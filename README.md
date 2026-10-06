@@ -91,9 +91,9 @@ Code Graph Galaxy is available as a native desktop application and a portable CL
 
 ### Option A: Pre-built Desktop App (Recommended)
 Download the latest version for your OS from [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases):
-1. **Windows**: Run `Code-Graph-Galaxy-Setup-2.2.0.exe` or download the single-file `Code-Graph-Galaxy-2.2.0.exe` (Portable).
-2. **macOS**: Open `Code-Graph-Galaxy-2.2.0.dmg` (`-arm64.dmg` on Apple Silicon) and drag to Applications.
-3. **Linux**: Run `chmod +x Code-Graph-Galaxy-2.2.0.AppImage && ./Code-Graph-Galaxy-2.2.0.AppImage`.
+1. **Windows**: Run `Code-Graph-Galaxy-Setup-2.1.2.exe` or download the single-file `Code-Graph-Galaxy-2.1.2.exe` (Portable).
+2. **macOS**: Open `Code-Graph-Galaxy-2.1.2.dmg` (`-arm64.dmg` on Apple Silicon) and drag to Applications.
+3. **Linux**: Run `chmod +x Code-Graph-Galaxy-2.1.2.AppImage && ./Code-Graph-Galaxy-2.1.2.AppImage`.
 
 ---
 
@@ -162,7 +162,10 @@ codegraph-galaxy/
 │   │   └── index.html         # Clean, semantic UI layout
 │   └── static/
 │       ├── galaxy.css         # High-performance stylesheet (dark cyberpunk theme)
-│       ├── galaxy.js          # 3D visualization, inspector & tree logic
+│       ├── galaxy.js          # Core: state, i18n, 3D graph, drawers, chat
+│       ├── galaxy-flight.js   # Keyboard flight (WASD/QE, pole-safe basis)
+│       ├── galaxy-tree.js     # Explorer tree panel
+│       ├── galaxy-manager.js  # Indexing manager modal & window handlers
 │       └── 3d-force-graph.min.js  # Three.js 3D force graph engine
 ├── electron/
 │   ├── main.js                # Desktop window & Python lifecycle manager

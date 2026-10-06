@@ -89,9 +89,9 @@ Code Graph Galaxy 提供原生跨平台桌面應用與命令列運行方案：
 
 ### 方式一：下載預編譯桌面程式（推薦）
 請前往 [GitHub Releases](https://github.com/dardeaw/codegraph-galaxy/releases) 下載對應作業系統之安裝檔：
-1. **Windows**：執行 `Code-Graph-Galaxy-Setup-2.2.0.exe` 安裝，或直接雙擊執行 `Code-Graph-Galaxy-2.2.0.exe`（便攜版）。
-2. **macOS**：打開 `Code-Graph-Galaxy-2.2.0.dmg`（Apple Silicon 請用 `-arm64.dmg`）並拖曳至應用程式目錄。
-3. **Linux**：賦予權限後直接執行：`chmod +x Code-Graph-Galaxy-2.2.0.AppImage && ./Code-Graph-Galaxy-2.2.0.AppImage`。
+1. **Windows**：執行 `Code-Graph-Galaxy-Setup-2.1.2.exe` 安裝，或直接雙擊執行 `Code-Graph-Galaxy-2.1.2.exe`（便攜版）。
+2. **macOS**：打開 `Code-Graph-Galaxy-2.1.2.dmg`（Apple Silicon 請用 `-arm64.dmg`）並拖曳至應用程式目錄。
+3. **Linux**：賦予權限後直接執行：`chmod +x Code-Graph-Galaxy-2.1.2.AppImage && ./Code-Graph-Galaxy-2.1.2.AppImage`。
 
 ---
 
@@ -159,7 +159,10 @@ codegraph-galaxy/
 │   │   └── index.html         # 乾淨語義化之主介面結構
 │   └── static/
 │       ├── galaxy.css         # 高效能深色科技主題樣式表
-│       ├── galaxy.js          # 3D 星系視覺化、檔案樹與互動邏輯
+│       ├── galaxy.js          # 核心：狀態、i18n、3D 星系、抽屜、聊天
+│       ├── galaxy-flight.js   # 鍵盤飛行（WASD/QE，極點安全基底）
+│       ├── galaxy-tree.js     # Explorer 樹狀面板
+│       ├── galaxy-manager.js  # 入庫總管 modal 與 window 處理器
 │       └── 3d-force-graph.min.js  # Three.js 3D 力導向星系引擎
 ├── electron/
 │   ├── main.js                # 原生桌面視窗與 Python 生命週期守護
